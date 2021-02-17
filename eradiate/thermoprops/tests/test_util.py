@@ -8,7 +8,7 @@ from eradiate.thermoprops.util import (
     _to_regular,
     profile_dataset_spec
 )
-from eradiate.util.units import ureg
+from eradiate import unit_registry as ureg
 Q_ = ureg.Quantity
 
 

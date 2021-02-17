@@ -3,16 +3,21 @@
 from abc import ABC, abstractmethod
 
 import attr
+import pinttr
 
 from ..core import SceneElement
 from ...util.attrs import (
-    attrib_quantity, converter_or_auto, converter_to_units,
-    documented, get_doc, parse_docs, validator_is_positive, validator_or_auto,
-    validator_units_compatible
+    converter_or_auto,
+    converter_to_units,
+    documented,
+    get_doc,
+    parse_docs,
+    validator_is_positive,
+    validator_or_auto,
 )
 from ...util.factory import BaseFactory
-from ...util.units import config_default_units as cdu
-from ...util.units import ureg
+from ..._units import unit_context_default as ucd
+from ..._units import unit_registry as ureg
 
 
 @parse_docs
@@ -32,16 +37,14 @@ class Atmosphere(SceneElement, ABC):
     )
 
     toa_altitude = documented(
-        attrib_quantity(
+        pinttr.ib(
             default="auto",
-            converter=converter_or_auto(converter_to_units(cdu.generator("length"))),
+            converter=converter_or_auto(converter_to_units(ucd.deferred("length"))),
             validator=validator_or_auto(
-                validator_units_compatible(ureg.m),
+                pinttr.validators.has_compatible_units,
                 validator_is_positive
             ),
-            units_compatible=cdu.generator("length"),
-            units_add_converter=False,
-            units_add_validator=False
+            units=ucd.deferred("length"),
         ),
         doc="Altitude of the top-of-atmosphere level. If set to ``\"auto\"``, the "
             "TOA is inferred from the radiative properties profile provided it has "
@@ -53,16 +56,14 @@ class Atmosphere(SceneElement, ABC):
     )
 
     width = documented(
-        attrib_quantity(
+        pinttr.ib(
             default="auto",
-            converter=converter_or_auto(converter_to_units(cdu.generator("length"))),
+            converter=converter_or_auto(converter_to_units(ucd.deferred("length"))),
             validator=validator_or_auto(
-                validator_units_compatible(ureg.m),
+                pinttr.validators.has_compatible_units,
                 validator_is_positive
             ),
-            units_compatible=cdu.generator("length"),
-            units_add_converter=False,
-            units_add_validator=False
+            units=ucd.deferred("length"),
         ),
         doc="Atmosphere width. If set to ``\"auto\"``, a value will be estimated to "
             "ensure that the medium is optically thick. The implementation of "

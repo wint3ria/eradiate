@@ -3,7 +3,7 @@ import pytest
 from eradiate.scenes.core import KernelDict
 from eradiate.scenes.illumination import ConstantIllumination, DirectionalIllumination
 from eradiate.util.exceptions import UnitsError
-from eradiate.util.units import ureg
+from eradiate import unit_registry as ureg
 
 
 def test_constant(mode_mono):

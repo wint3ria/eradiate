@@ -2,18 +2,19 @@ import importlib
 
 import attr
 import numpy as np
+import pinttr
 import pytest
 
 import eradiate.kernel
+from eradiate import unit_context_default as ucd
+from eradiate import unit_registry as ureg
 from eradiate.scenes.core import KernelDict, SceneElement
-from eradiate.scenes.illumination import DirectionalIllumination
 from eradiate.util.attrs import (
-    attrib_quantity, validator_has_len, validator_is_number,
+    validator_has_len,
+    validator_is_number,
     validator_is_positive
 )
 from eradiate.util.exceptions import KernelVariantError, UnitsError
-from eradiate.util.units import config_default_units as cdu
-from eradiate.util.units import ureg
 
 
 def test_kernel_dict():
@@ -65,10 +66,10 @@ def test_scene_element(mode_mono):
             validator=attr.validators.instance_of(str),
         )
 
-        direction = attrib_quantity(
+        direction = pinttr.ib(
             default=ureg.Quantity([0, 0, -1], ureg.m),
             validator=validator_has_len(3),
-            units_compatible=cdu.generator("length"),
+            units=ucd.deferred("length"),
         )
 
         irradiance = attr.ib(
@@ -116,7 +117,7 @@ def test_scene_element(mode_mono):
     d.direction = [0, 0, -1]
     assert d.direction.units == ureg.m
     # -- Check that default units get applied when overridden
-    with cdu.override({"length": "km"}):
+    with ucd.override({"length": "km"}):
         d.direction = [0, 0, -1]
     assert np.allclose(d.direction, [0, 0, -1000] * ureg.m)
     assert d.direction.units == ureg.km

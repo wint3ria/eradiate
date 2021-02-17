@@ -10,18 +10,20 @@
 from abc import ABC
 
 import attr
+import pinttr
 
 from .core import SceneElement
 from .spectra import SolarIrradianceSpectrum, Spectrum, SpectrumFactory
 from ..util.attrs import (
-    attrib_quantity,
-    documented, parse_docs, validator_has_quantity,
+    documented,
+    parse_docs,
+    validator_has_quantity,
     validator_is_positive
 )
 from ..util.factory import BaseFactory
 from ..util.frame import angles_to_direction
-from ..util.units import config_default_units as cdu
-from ..util.units import ureg
+from .._units import unit_context_default as ucd
+from .._units import unit_registry as ureg
 
 
 @attr.s
@@ -91,10 +93,10 @@ class DirectionalIllumination(Illumination):
     """
 
     zenith = documented(
-        attrib_quantity(
+        pinttr.ib(
             default=ureg.Quantity(0., ureg.deg),
             validator=validator_is_positive,
-            units_compatible=cdu.generator("angle"),
+            units=ucd.deferred("angle"),
         ),
         doc="Zenith angle. \n"
             "\n"
@@ -104,10 +106,10 @@ class DirectionalIllumination(Illumination):
     )
 
     azimuth = documented(
-        attrib_quantity(
+        pinttr.ib(
             default=ureg.Quantity(0., ureg.deg),
             validator=validator_is_positive,
-            units_compatible=cdu.generator("angle"),
+            units=ucd.deferred("angle"),
         ),
         doc="Azimuth angle value.\n"
             "\n"

@@ -10,16 +10,21 @@
 from abc import ABC, abstractmethod
 
 import attr
+import pinttr
 
 from .core import SceneElement
 from .spectra import Spectrum, SpectrumFactory
 from ..util.attrs import (
-    attrib_quantity, documented, get_doc, parse_docs, validator_has_quantity, validator_is_positive
+    documented,
+    get_doc,
+    parse_docs,
+    validator_has_quantity,
+    validator_is_positive
 )
 from ..util.factory import BaseFactory
-from ..util.units import config_default_units as cdu
-from ..util.units import kernel_default_units as kdu
-from ..util.units import ureg
+from .._units import unit_context_default as ucd
+from .._units import unit_context_kernel as uck
+from .._units import unit_registry as ureg
 
 
 @parse_docs
@@ -41,10 +46,10 @@ class Surface(SceneElement, ABC):
     )
 
     width = documented(
-        attrib_quantity(
+        pinttr.ib(
             default=ureg.Quantity(100., ureg.km),
             validator=validator_is_positive,
-            units_compatible=cdu.generator("length")
+            units=ucd.deferred("length")
         ),
         doc="Surface size.\n"
             "\n"
@@ -80,7 +85,7 @@ class Surface(SceneElement, ABC):
         else:
             bsdf = self.bsdfs()[f"bsdf_{self.id}"]
 
-        width = self.width.to(kdu.get("length")).magnitude
+        width = self.width.to(uck.get("length")).magnitude
 
         return {
             f"shape_{self.id}": {

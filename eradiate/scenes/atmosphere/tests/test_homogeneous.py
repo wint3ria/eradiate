@@ -7,7 +7,7 @@ from eradiate.scenes.atmosphere.homogeneous import HomogeneousAtmosphere
 from eradiate.scenes.core import KernelDict
 from eradiate.util.collections import onedict_value
 from eradiate.util.exceptions import UnitsError
-from eradiate.util.units import ureg
+from eradiate import unit_registry as ureg
 
 
 @pytest.mark.parametrize("ref", (False, True))

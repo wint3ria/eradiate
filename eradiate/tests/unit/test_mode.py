@@ -2,7 +2,7 @@
 import pytest
 from attr.exceptions import FrozenInstanceError
 
-from eradiate.util.units import ureg
+from eradiate import unit_registry as ureg
 
 
 def test_modes():

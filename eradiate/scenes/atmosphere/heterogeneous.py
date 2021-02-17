@@ -11,7 +11,7 @@ from .base import Atmosphere, AtmosphereFactory
 from ...radprops import RadProfileFactory
 from ...radprops.rad_profile import RadProfile
 from ...util.attrs import documented, parse_docs, validator_is_file
-from ...util.units import kernel_default_units as kdu, ureg
+from ..._units import unit_context_kernel as uck, unit_registry as ureg
 
 
 def write_binary_grid3d(filename, values):
@@ -246,7 +246,7 @@ class HeterogeneousAtmosphere(Atmosphere):
                 )
                 sigma_t = ureg.Quantity(
                     read_binary_grid3d(self.sigma_t_fname),
-                    kdu.get("collision_coefficient")
+                    uck.get("collision_coefficient")
                 )
             else:
                 albedo = self.profile.albedo
@@ -308,7 +308,7 @@ class HeterogeneousAtmosphere(Atmosphere):
             # We have the data and the filename: we can create the file
             write_binary_grid3d(
                 field_fname,
-                field_quantity.to(kdu.get(self._quantities[field])).magnitude
+                field_quantity.to(uck.get(self._quantities[field])).magnitude
             )
 
     def phase(self):
@@ -317,9 +317,9 @@ class HeterogeneousAtmosphere(Atmosphere):
     def media(self, ref=False):
         from eradiate.kernel.core import ScalarTransform4f
 
-        k_width = self.kernel_width.to(kdu.get("length")).magnitude
-        k_height = self.kernel_height.to(kdu.get("length")).magnitude
-        k_offset = self.kernel_offset.to(kdu.get("length")).magnitude
+        k_width = self.kernel_width.to(uck.get("length")).magnitude
+        k_height = self.kernel_height.to(uck.get("length")).magnitude
+        k_offset = self.kernel_offset.to(uck.get("length")).magnitude
 
         # First, transform the [0, 1]^3 cube to the right dimensions
         trafo = ScalarTransform4f([
@@ -360,7 +360,7 @@ class HeterogeneousAtmosphere(Atmosphere):
         else:
             medium = self.media(ref=False)[f"medium_{self.id}"]
 
-        k_length = kdu.get("length")
+        k_length = uck.get("length")
         k_width = self.kernel_width.to(k_length).magnitude
         k_height = self.kernel_height.to(k_length).magnitude
         k_offset = self.kernel_offset.to(k_length).magnitude

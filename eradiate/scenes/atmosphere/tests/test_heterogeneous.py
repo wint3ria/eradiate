@@ -8,7 +8,7 @@ from eradiate.scenes.atmosphere.heterogeneous import HeterogeneousAtmosphere, wr
 from eradiate.scenes.core import KernelDict
 from eradiate.util.exceptions import UnitsError
 from eradiate.util.collections import onedict_value
-from eradiate.util.units import config_default_units, kernel_default_units, ureg
+from eradiate import unit_context_default, unit_context_kernel, unit_registry as ureg
 
 
 def test_read_binary_grid3d():
@@ -51,7 +51,7 @@ def test_heterogeneous_nowrite(mode_mono):
     assert load_dict(onedict_value(s)) is not None
 
     # Load all elements at once (and use references)
-    with kernel_default_units.override({"length": "km"}):
+    with unit_context_kernel.override({"length": "km"}):
         kernel_dict = KernelDict.empty()
         kernel_dict.add(a)
         scene = kernel_dict.load()
@@ -60,7 +60,7 @@ def test_heterogeneous_nowrite(mode_mono):
 
 def test_heterogeneous_write(mode_mono, tmpdir):
     # Check if volume data file creation works as expected
-    with config_default_units.override({"length": "km"}):
+    with unit_context_default.override({"length": "km"}):
         a = HeterogeneousAtmosphere(
             width=100.,
             profile={

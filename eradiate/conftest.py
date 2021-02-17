@@ -1,7 +1,7 @@
 import pytest
 
 import eradiate
-from eradiate import data
+# from eradiate import data
 
 
 # Create kernel variant fixtures
@@ -40,26 +40,26 @@ for mode in eradiate.modes():
 del generate_fixture
 
 
-def pytest_runtest_setup(item):
-    for mark in item.iter_markers(name="skipif_data_not_found"):
-        if "dataset_category" not in mark.kwargs:
-            dataset_category = mark.args[0]
-        else:
-            dataset_category = mark.kwargs["dataset_category"]
-
-        if "dataset_id" not in mark.kwargs:
-            dataset_id = mark.args[1]
-        else:
-            dataset_id = mark.kwargs["dataset_id"]
-
-        # Try to get path to dataset file
-        dataset_path = data.getter(dataset_category).PATHS[dataset_id]
-
-        # If the data is missing, we skip the test
-        if not data.find(dataset_category)[dataset_id]:
-            pytest.skip(f"Could not find dataset '{dataset_category}.{dataset_id}'; "
-                        f"please download dataset files and place them in "
-                        f"'data/{dataset_path}' directory.")
+# def pytest_runtest_setup(item):
+#     for mark in item.iter_markers(name="skipif_data_not_found"):
+#         if "dataset_category" not in mark.kwargs:
+#             dataset_category = mark.args[0]
+#         else:
+#             dataset_category = mark.kwargs["dataset_category"]
+#
+#         if "dataset_id" not in mark.kwargs:
+#             dataset_id = mark.args[1]
+#         else:
+#             dataset_id = mark.kwargs["dataset_id"]
+#
+#         # Try to get path to dataset file
+#         dataset_path = data.getter(dataset_category).PATHS[dataset_id]
+#
+#         # If the data is missing, we skip the test
+#         if not data.find(dataset_category)[dataset_id]:
+#             pytest.skip(f"Could not find dataset '{dataset_category}.{dataset_id}'; "
+#                         f"please download dataset files and place them in "
+#                         f"'data/{dataset_path}' directory.")
 
 
 def pytest_configure(config):

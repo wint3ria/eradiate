@@ -32,9 +32,9 @@ from ...util import xarray as ertxr
 from ...util.attrs import documented, parse_docs
 from ...util.exceptions import ModeError
 from ...util.misc import always_iterable, ensure_array
-from ...util.units import config_default_units as cdu
-from ...util.units import kernel_default_units as kdu
-from ...util.units import ureg
+from ..._units import unit_context_default as ucd
+from ..._units import unit_context_kernel as uck
+from ..._units import unit_registry as ureg
 
 
 @MeasureFactory.register(
@@ -200,7 +200,7 @@ class OneDimScene(SceneElement):
             if isinstance(measure, (TOAHsphereMeasure, TOAPPlaneMeasure)):
                 # Override ray origin
                 if self.atmosphere is not None:
-                    sensor_altitude = self.atmosphere.kernel_height.to(cdu.get("length")).magnitude
+                    sensor_altitude = self.atmosphere.kernel_height.to(ucd.get("length")).magnitude
                     measure.origin = [0., 0., sensor_altitude]
 
             if isinstance(measure, TOAPPlaneMeasure):
@@ -397,12 +397,12 @@ class OneDimSolverApp:
                 var_specs={
                     "irradiance": ertxr.VarSpec(
                         standard_name="toa_horizontal_solar_irradiance_per_unit_wavelength",
-                        units=str(kdu.get("irradiance")),
+                        units=str(uck.get("irradiance")),
                         long_name="top-of-atmosphere horizontal spectral irradiance"
                     ),
                     "lo": ertxr.VarSpec(
                         standard_name="toa_outgoing_radiance_per_unit_wavelength",
-                        units=str(kdu.get("radiance")),
+                        units=str(uck.get("radiance")),
                         long_name="top-of-atmosphere outgoing spectral radiance"
                     ),
                     "brf": ertxr.VarSpec(

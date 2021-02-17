@@ -1,10 +1,10 @@
 import enum
 
 import attr
+import pinttr
 
-from .util.attrs import attrib_quantity, unit_enabled
-from .util.units import config_default_units, ureg
-
+from ._units import unit_registry as ureg
+from ._units import unit_context_default as ucd
 
 class ModeSpectrum(enum.Enum):
     """An enumeration defining known kernel spectrum representations."""
@@ -44,7 +44,6 @@ def register_mode(mode_id, spectrum="mono", precision="single"):
     return decorator
 
 
-@unit_enabled
 @attr.s(frozen=True)
 class Mode:
     # Parent class for all operational modes
@@ -83,9 +82,9 @@ class ModeNone(Mode):
 @attr.s
 class ModeMono(Mode):
     # Monochromatic mode, single precision
-    wavelength = attrib_quantity(
-        default=ureg.Quantity(550., ureg.nm),
-        units_compatible=config_default_units.generator("wavelength"),
+    wavelength = pinttr.ib(
+        default=ureg.Quantity(550.0, ureg.nm),
+        units=ucd.deferred("wavelength"),
         on_setattr=None
     )
 
@@ -98,9 +97,9 @@ class ModeMono(Mode):
 @attr.s
 class ModeMonoDouble(Mode):
     # Monochromatic mode, double precision
-    wavelength = attrib_quantity(
+    wavelength = pinttr.ib(
         default=ureg.Quantity(550., ureg.nm),
-        units_compatible=config_default_units.generator("wavelength"),
+        units=ucd.deferred("wavelength"),
         on_setattr=None
     )
 

@@ -15,7 +15,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from xarray.plot import FacetGrid
 
-from eradiate.util.units import ureg
+from eradiate import unit_registry as ureg
 
 
 # -- Plotting wrappers ---------------------------------------------------------

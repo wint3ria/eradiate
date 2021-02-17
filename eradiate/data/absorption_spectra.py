@@ -19,7 +19,7 @@ import xarray as xr
 
 from .core import DataGetter
 from ..util.presolver import PathResolver
-from ..util.units import ureg
+from .._units import unit_registry as ureg
 
 _presolver = PathResolver()
 

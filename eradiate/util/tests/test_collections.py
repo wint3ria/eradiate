@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from eradiate.util.collections import is_vector3
-from eradiate.util.units import ureg
+from eradiate import unit_registry as ureg
 
 vector3_test_data = [
     ("aaa", False),

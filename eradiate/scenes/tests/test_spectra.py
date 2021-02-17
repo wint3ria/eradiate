@@ -3,13 +3,16 @@ import pytest
 
 import eradiate
 from eradiate.scenes.spectra import (
-    SolarIrradianceSpectrum, SpectrumFactory, UniformSpectrum
+    SolarIrradianceSpectrum,
+    SpectrumFactory,
+    UniformSpectrum,
 )
 from eradiate.util.collections import onedict_value
 from eradiate.util.exceptions import UnitsError
-from eradiate.util.units import PhysicalQuantity, ureg
-from eradiate.util.units import config_default_units as cdu
-from eradiate.util.units import kernel_default_units as kdu
+from eradiate._units import PhysicalQuantity
+from eradiate import unit_registry as ureg
+from eradiate import unit_context_default as ucd
+from eradiate import unit_context_kernel as uck
 
 
 def test_converter(mode_mono):
@@ -36,7 +39,6 @@ def test_uniform(mode_mono):
 
     # Instantiate with only quantity
     UniformSpectrum(quantity=PhysicalQuantity.COLLISION_COEFFICIENT)
-    UniformSpectrum(quantity="COLLISION_COEFFICIENT")
     UniformSpectrum(quantity="collision_coefficient")
 
     # Instantiate with unsupported quantity
@@ -65,9 +67,9 @@ def test_uniform(mode_mono):
     assert load_dict(onedict_value(s.kernel_dict())) is not None
 
     # Unit scaling is properly applied
-    with cdu.override({"radiance": "W/m^2/sr/nm"}):
+    with ucd.override({"radiance": "W/m^2/sr/nm"}):
         s = UniformSpectrum(quantity="radiance", value=1.)
-    with kdu.override({"radiance": "kW/m^2/sr/nm"}):
+    with uck.override({"radiance": "kW/m^2/sr/nm"}):
         d = s.kernel_dict()
         assert np.allclose(d["spectrum"]["value"], 1e-3)
 

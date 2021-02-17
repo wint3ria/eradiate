@@ -14,7 +14,7 @@ from ...util.attrs import (
     validator_or_auto
 )
 from ...util.collections import onedict_value
-from ...util.units import kernel_default_units
+from ..._units import unit_context_kernel as uck
 
 
 @AtmosphereFactory.register("homogeneous")
@@ -126,7 +126,7 @@ class HomogeneousAtmosphere(Atmosphere):
         else:
             medium = self.media(ref=False)[f"medium_{self.id}"]
 
-        k_length = kernel_default_units.get("length")
+        k_length = uck.get("length")
         k_width = self.kernel_width.to(k_length).magnitude
         k_height = self.kernel_height.to(k_length).magnitude
         k_offset = self.kernel_offset.to(k_length).magnitude

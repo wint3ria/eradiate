@@ -4,7 +4,7 @@ from eradiate.util.frame import (
     angles_to_direction, cos_angle_to_direction, direction_to_angles, \
     spherical_to_cartesian
 )
-from eradiate.util.units import ureg
+from eradiate import unit_registry as ureg
 
 
 def test_cos_angle_to_direction():
