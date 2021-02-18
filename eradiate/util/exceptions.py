@@ -11,12 +11,6 @@ class KernelVariantError(Exception):
     pass
 
 
-class UnitsError(Exception):
-    """Raised when encountering issues with units (can be raised even when
-    DimensionalityError would not)."""
-    pass
-
-
 # Warnings
 class ConfigWarning(UserWarning):
     """Used when encountering nonfatal configuration issues."""

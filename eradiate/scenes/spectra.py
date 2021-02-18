@@ -23,12 +23,12 @@ from ..util.attrs import (
     validator_is_positive,
     validator_is_string,
 )
-from ..util.exceptions import ModeError, UnitsError
+from ..util.exceptions import ModeError
 from ..util.factory import BaseFactory
 from .._units import PhysicalQuantity
 from .._units import unit_registry as ureg
 from .._units import unit_context_default as ucd
-from .._units import unit_context_default as uck
+from .._units import unit_context_kernel as uck
 
 
 @parse_docs
@@ -146,8 +146,10 @@ class UniformSpectrum(Spectrum):
             expected_units = ucd.get(self.quantity)
 
             if not pinttr.util.units_compatible(expected_units, value.units):
-                raise UnitsError(
-                    f"while validating {attribute.name}, got units "
+                raise pinttr.exceptions.UnitsError(
+                    value.units,
+                    expected_units,
+                    extra_msg=f"while validating {attribute.name}, got units "
                     f"'{value.units}' incompatible with quantity {self.quantity} "
                     f"(expected '{expected_units}')"
                 )
@@ -172,7 +174,7 @@ class UniformSpectrum(Spectrum):
         try:
             value = self.value + other.value
         except DimensionalityError as e:
-            raise UnitsError(str(e))
+            raise pinttr.exceptions.UnitsError(e.units1, e.units2)
 
         return UniformSpectrum(quantity=quantity, value=value)
 
@@ -187,7 +189,7 @@ class UniformSpectrum(Spectrum):
         try:
             value = self.value - other.value
         except DimensionalityError as e:
-            raise UnitsError(str(e))
+            raise pinttr.exceptions.UnitsError(e.units1, e.units2)
 
         return UniformSpectrum(quantity=quantity, value=value)
 
@@ -203,7 +205,7 @@ class UniformSpectrum(Spectrum):
         try:
             value = self.value * other.value
         except DimensionalityError as e:
-            raise UnitsError(str(e))
+            raise pinttr.exceptions.UnitsError(e.units1, e.units2)
 
         return UniformSpectrum(quantity=quantity, value=value)
 
@@ -218,7 +220,7 @@ class UniformSpectrum(Spectrum):
         try:
             value = self.value / other.value
         except DimensionalityError as e:
-            raise UnitsError(str(e))
+            raise pinttr.exceptions.UnitsError(e.units1, e.units2)
 
         return UniformSpectrum(quantity=quantity, value=value)
 
@@ -228,7 +230,7 @@ class UniformSpectrum(Spectrum):
         return {
             "spectrum": {
                 "type": "uniform",
-                "value": self.value.to(kernel_units).magnitude,
+                "value": self.value.m_as(kernel_units),
             }
         }
 

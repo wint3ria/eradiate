@@ -1,14 +1,23 @@
-import numpy as np
 import pathlib
-import pytest
 import tempfile
 
+import numpy as np
+import pinttr
+import pytest
+
+from eradiate import (
+    unit_context_default,
+    unit_context_kernel,
+)
+from eradiate import unit_registry as ureg
 from eradiate.data import _presolver
-from eradiate.scenes.atmosphere.heterogeneous import HeterogeneousAtmosphere, write_binary_grid3d, read_binary_grid3d
+from eradiate.scenes.atmosphere.heterogeneous import (
+    HeterogeneousAtmosphere,
+    read_binary_grid3d,
+    write_binary_grid3d,
+)
 from eradiate.scenes.core import KernelDict
-from eradiate.util.exceptions import UnitsError
 from eradiate.util.collections import onedict_value
-from eradiate import unit_context_default, unit_context_kernel, unit_registry as ureg
 
 
 def test_read_binary_grid3d():
@@ -109,8 +118,8 @@ def test_heterogeneous_us76(mode_mono, tmpdir):
 
 
 def test_heterogeneous_units(mode_mono):
-    # test that initialising a heterogeneous atmosphere with the wrong units raises an error
-    with pytest.raises(UnitsError):
+    # Initialising a heterogeneous atmosphere with the wrong units raises an error
+    with pytest.raises(pinttr.exceptions.UnitsError):
         a = HeterogeneousAtmosphere(
             width=ureg.Quantity(100., "m^2"),
             toa_altitude=1000.,
@@ -121,7 +130,7 @@ def test_heterogeneous_units(mode_mono):
             }
         )
 
-    with pytest.raises(UnitsError):
+    with pytest.raises(pinttr.exceptions.UnitsError):
         a = HeterogeneousAtmosphere(
             width=100.,
             toa_altitude=ureg.Quantity(1000., "s"),

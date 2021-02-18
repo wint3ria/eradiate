@@ -1,4 +1,5 @@
 import numpy as np
+import pinttr
 import pytest
 
 import eradiate
@@ -8,7 +9,6 @@ from eradiate.scenes.spectra import (
     UniformSpectrum,
 )
 from eradiate.util.collections import onedict_value
-from eradiate.util.exceptions import UnitsError
 from eradiate._units import PhysicalQuantity
 from eradiate import unit_registry as ureg
 from eradiate import unit_context_default as ucd
@@ -27,7 +27,7 @@ def test_converter(mode_mono):
     assert s == UniformSpectrum(quantity="radiance", value=1.0)
     s = SpectrumFactory.converter("radiance")(ureg.Quantity(1e6, "W/km^2/sr/nm"))
     assert s == UniformSpectrum(quantity="radiance", value=1.0)
-    with pytest.raises(UnitsError):
+    with pytest.raises(pinttr.exceptions.UnitsError):
         SpectrumFactory.converter("irradiance")(ureg.Quantity(1, "W/m^2/sr/nm"))
 
 
@@ -52,7 +52,7 @@ def test_uniform(mode_mono):
         UniformSpectrum(quantity="collision_coefficient", value=-1.)
 
     # Raise if units and quantity are inconsistent
-    with pytest.raises(UnitsError):
+    with pytest.raises(pinttr.exceptions.UnitsError):
         UniformSpectrum(
             quantity="collision_coefficient",
             value=ureg.Quantity(1., "")

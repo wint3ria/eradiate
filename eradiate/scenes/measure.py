@@ -180,6 +180,12 @@ class TargetPoint(Target):
         return self.xyz.to(uck.get("length")).magnitude
 
 
+def _target_rectangle_xy_converter(x):
+    return converter_quantity(float)(
+        pinttr.converters.to_units(ucd.deferred("length"))(x)
+    )
+
+
 @parse_docs
 @attr.s
 class TargetRectangle(Target):
@@ -188,13 +194,11 @@ class TargetRectangle(Target):
     This target spec defines an rectangular, axis-aligned zone where ray targets
     will be sampled.
     """
-
     # fmt: off
-    # Corners of an axis-aligned rectangle in CDU
+    # Corners of an axis-aligned rectangle in config units
     xmin = documented(
         pinttr.ib(
-            converter=converter_quantity(float),
-            validator=validator_quantity(validator_is_number),
+            converter=_target_rectangle_xy_converter,
             units=ucd.deferred("length")
         ),
         doc="Lower bound on the X axis.\n"
@@ -205,8 +209,7 @@ class TargetRectangle(Target):
 
     xmax = documented(
         pinttr.ib(
-            converter=converter_quantity(float),
-            validator=validator_quantity(validator_is_number),
+            converter=_target_rectangle_xy_converter,
             units=ucd.deferred("length")
         ),
         doc="Upper bound on the X axis.\n"
@@ -217,8 +220,7 @@ class TargetRectangle(Target):
 
     ymin = documented(
         pinttr.ib(
-            converter=converter_quantity(float),
-            validator=validator_quantity(validator_is_number),
+            converter=_target_rectangle_xy_converter,
             units=ucd.deferred("length")
         ),
         doc="Lower bound on the Y axis.\n"
@@ -229,8 +231,7 @@ class TargetRectangle(Target):
 
     ymax = documented(
         pinttr.ib(
-            converter=converter_quantity(float),
-            validator=validator_quantity(validator_is_number),
+            converter=_target_rectangle_xy_converter,
             units=ucd.deferred("length"),
         ),
         doc="Upper bound on the Y axis.\n"
@@ -240,6 +241,12 @@ class TargetRectangle(Target):
     )
 
     # fmt: on
+    @xmin.validator
+    @xmax.validator
+    @ymin.validator
+    @ymax.validator
+    def _xy_validator(self, attribute, value):
+        validator_quantity(validator_is_number)(self, attribute, value)
 
     @xmin.validator
     @xmax.validator
