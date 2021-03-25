@@ -35,6 +35,7 @@ RUN pip3 install                \
     isort                       \
     jupyterlab                  \
     setuptools                  \
+    toolz                       \
     twine                       \
     mock                        \
     pydata-sphinx-theme         \
@@ -56,8 +57,9 @@ WORKDIR /sources/eradiate
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 RUN ln -sf /usr/bin/pip3 /usr/bin/pip
 
-CMD wget https://eradiate.eu/data/solid_2017.zip  \
-    && wget https://eradiate.eu/data/spectra-us76_u86_4.zip  \
-    && cd eradiate/data && (unzip ../../solid_2017.zip || true) \
+CMD echo "Downloading datasets..." && wget https://eradiate.eu/data/solid_2017.zip -q  \
+    && wget https://eradiate.eu/data/spectra-us76_u86_4.zip -q \
+    && echo "Done downloading." \
+    && cd resources/data && (unzip ../../solid_2017.zip || true) \
     && (unzip ../../spectra-us76_u86_4.zip || true) && cd ../.. \
     && pytest eradiate
