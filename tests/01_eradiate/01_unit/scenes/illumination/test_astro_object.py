@@ -2,10 +2,13 @@ import mitsuba as mi
 import numpy as np
 import pytest
 
-from eradiate import unit_registry as ureg
-from eradiate.scenes.illumination import AstroObjectIllumination
+from eradiate import run, unit_registry as ureg
+from eradiate.scenes.illumination import AstroObjectIllumination, DirectionalIllumination
 from eradiate.scenes.spectra import SolarIrradianceSpectrum, UniformSpectrum
 from eradiate.test_tools.types import check_scene_element
+from eradiate.experiments import AtmosphereExperiment
+from eradiate.scenes.measure import HemisphericalDistantMeasure
+
 
 
 @pytest.mark.parametrize(
@@ -88,3 +91,85 @@ def test_astro_object_azimuth_convention(mode_mono, azimuth_convention, expected
         azimuth_convention=azimuth_convention,
     )
     assert np.allclose(illumination.direction, expected), illumination.direction
+
+
+@pytest.mark.parametrize(
+    "angular_diameter", [
+        0.1 * ureg.deg,
+        0.5 * ureg.deg,
+        #1.0 * ureg.deg,
+        #5.0 * ureg.deg,
+        #10.0 * ureg.deg,
+        #15.0 * ureg.deg,
+        #20.0 * ureg.deg,
+    ]
+)
+def test_astro_object_scene_energy(mode_mono, angular_diameter):
+
+    astro_object = AstroObjectIllumination(
+        angular_diameter=angular_diameter,
+        zenith=45.0 * ureg.deg,
+        azimuth=0.0 * ureg.deg,
+    )
+
+    directional = DirectionalIllumination(
+        zenith=45.0 * ureg.deg,
+        azimuth=0.0 * ureg.deg,
+    )
+
+    target = dict(
+        type="rectangle",
+        xmin= -0.5,
+        xmax=  0.5,
+        ymin= -0.5,
+        ymax=  0.5,
+        z=0.0,
+    )
+
+    measure = HemisphericalDistantMeasure(
+        target=target,
+    )
+    measure._film_resolution=(64, 64)
+
+    experiment1=AtmosphereExperiment(
+        illumination=astro_object,
+        measures=[measure],
+        extra_objects={
+            "boa_white_reference_patch": {
+                "factory": "shape",
+                "type": "rectangle",
+                "center": [0, 0, 0],
+                "edges": [1, 1],
+                "bsdf": {
+                    "type": "lambertian",
+                    "reflectance": 1.0
+                }
+            }
+        },
+        surface=dict(type="lambertian", reflectance=1.0)
+    )
+
+    experiment2=AtmosphereExperiment(
+        illumination=directional,
+        measures=[measure],
+        extra_objects={
+            "boa_white_reference_patch": {
+                "factory": "shape",
+                "type": "rectangle",
+                "center": [0, 0, 0],
+                "edges": [1, 1],
+                "bsdf": {
+                    "type": "lambertian",
+                    "reflectance": 1.0
+                }
+            }
+        },
+        surface=dict(type="lambertian", reflectance=1.0)
+    )
+
+    ds1 = run(experiment1, spp=10)
+    ds2 = run(experiment2, spp=10)
+
+    print(ds1)
+
+    assert np.allclose(ds1.radiance.sum().squeeze().item(), ds2.radiance.sum().squeeze().item())
