@@ -377,3 +377,31 @@ class Chi2Test(RegressionTest):
         p_value = 1.0 - rlgamma(dof / 2.0, chi2val / 2.0)
 
         return p_value > self.threshold, p_value
+
+
+@define
+class VarianceTest(RegressionTest):
+
+    METRIC_NAME = "variance"
+
+    alpha: float = documented(
+        attrs.field(validator=attrs.validators.instance_of(float)),
+        doc="Alpha coverage factor.",
+        type="float",
+        init_type="float",
+    )
+
+    def _evaluate(self) -> tuple[bool, float]:
+
+        ref_np = self.reference.brf.values
+        result_np = self.value.brf.values
+        sigma_ref_np = self.reference.var.values
+        sigma_res_np = self.value.var.values
+
+        sigma_c = np.sqrt(sigma_res_np ** 2 + sigma_ref_np ** 2)
+
+        rel_bias = (result_np - ref_np) / ref_np
+
+        criterion = np.abs(rel_bias) < self.alpha * sigma_c / result_np
+
+        return all(criterion)
