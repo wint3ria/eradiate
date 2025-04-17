@@ -12,6 +12,7 @@ jobs:
         with:
           submodules: "recursive"
       - uses: seanmiddleditch/gha-setup-ninja@master
+      - uses: egor-tensin/setup-clang@v1
       - name: Install Python
         uses: actions/setup-python@v5
         with:
@@ -20,13 +21,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install .[doc,recommended,test,dev]
+      - name: Build kernel
+        run: |
+          cmake -S ext/mitsuba -B ext/mitsuba/build -DCMAKE_BUILD_TYPE=Release -GNinja -DCMAKE_CXX_COMPILER=clang --preset eradiate
+          cmake --build ext/mitsuba/build
       - name: Download datasets
         run: |
           eradiate data fetch minimal
-      - name: Build kernel
-        run: |
-          cmake -S ext/mitsuba -B ext/mitsuba/build -DCMAKE_BUILD_TYPE=Release -GNinja --preset eradiate
-          cmake --build ext/mitsuba/build
       - name: Run fast tests
         run: |
           pytest --robot-tagstatinclude unit --robot-tagstatinclude system --robot-tagstatinclude regression --robot-tagstatinclude slow -m "not slow" ./tests
