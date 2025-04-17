@@ -23,11 +23,19 @@ jobs:
           sudo apt-get install -y python3-pytest python3-pytest-xdist python3-numpy
           python -m pip install --upgrade pip
           pip install .[doc,recommended,test,dev]
+      - name: Cache Mitsuba build artefacts
+        id: cache-mi-build
+        uses: actions/cache@v4
+        with:
+          path: ext/mitsuba/build
       - name: Build kernel
+        if: steps.cache-mi-build.outputs.cache-hit != 'true'
         run: |
           export CC=clang-17 export CXX=clang++-17
           cmake -S ext/mitsuba -B ext/mitsuba/build -DCMAKE_BUILD_TYPE=Release -GNinja --preset eradiate
           cmake --build ext/mitsuba/build
+      - name: Set Paths
+        run: |
           source setpath.sh
       - name: Download datasets
         run: |
