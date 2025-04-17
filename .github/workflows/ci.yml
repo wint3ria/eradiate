@@ -20,6 +20,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install .[doc,recommended,test,dev]
+      - name: Download datasets
+        run: |
+          eradiate data fetch minimal
       - name: Build kernel
         run: |
           cmake -S ext/mitsuba -B ext/mitsuba/build -DCMAKE_BUILD_TYPE=Release -GNinja --preset eradiate
