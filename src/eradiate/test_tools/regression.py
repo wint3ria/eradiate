@@ -143,8 +143,8 @@ def figure_to_html(fig: plt.Figure) -> str:
 
 
 def reference_converter(
-    value: PathLike | xr.Dataset | None,
-) -> xr.Dataset | None:
+    value: typing.Optional[typing.Union[PathLike, xr.Dataset]],
+) -> typing.Optional[xr.Dataset]:
     """
     A converter for handling the reference data attribute.
 
@@ -218,7 +218,7 @@ class RegressionTest(ABC):
     """
 
     # Name used for the reference metric. Must be set be subclasses.
-    METRIC_NAME: typing.ClassVar[str | None] = None
+    METRIC_NAME: typing.ClassVar[typing.Optional[str]] = None
 
     name: str = documented(
         attrs.field(validator=attrs.validators.instance_of(str)),
@@ -237,7 +237,7 @@ class RegressionTest(ABC):
         init_type=":class:`xarray.Dataset`",
     )
 
-    reference: xr.Dataset | None = documented(
+    reference: typing.Optional[xr.Dataset] = documented(
         attrs.field(
             default=None,
             converter=reference_converter,
@@ -371,7 +371,7 @@ class RegressionTest(ABC):
         os.makedirs(os.path.dirname(fname_output), exist_ok=True)
         dataset.to_netcdf(fname_output)
 
-    def _plot(self, metric_value: float | None, reference_only: bool) -> None:
+    def _plot(self, metric_value: typing.Optional[float], reference_only: bool) -> None:
         """
         Create a plot to visualize the results of the test.
         If the ``reference only`` parameter is set, create only a simple plot
@@ -644,10 +644,10 @@ class PairedStudentTTest(AbstractStudentTTest):
 
     METRIC_NAME = "paired T-test p-value"
 
-    cov: np.typing.ArrayLike | float = documented(
+    cov: typing.Union[np.typing.ArrayLike, float] = documented(
         attrs.field(kw_only=True, default=0.0),
         doc="Covariance between observation, defaults to zero",
-        type=np.typing.ArrayLike | float,
+        type=typing.Union[np.typing.ArrayLike, float],
         init_type="float",
     )
 
