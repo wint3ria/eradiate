@@ -28,8 +28,8 @@ from ..scenes.geometry import (
     SphericalShellGeometry,
 )
 from ..scenes.integrators import (
+    EOVolPathIntegrator,
     PiecewiseVolPathIntegrator,
-    VolPathIntegrator,
 )
 from ..scenes.measure import AbstractDistantMeasure, Measure, TargetPoint
 from ..scenes.surface import BasicSurface
@@ -174,7 +174,7 @@ class AtmosphereExperiment(EarthObservationExperiment):
             if piecewise_compatible:
                 self.integrator = PiecewiseVolPathIntegrator()
             else:
-                self.integrator = VolPathIntegrator()
+                self.integrator = EOVolPathIntegrator()
         else:
             if (
                 isinstance(self.integrator, PiecewiseVolPathIntegrator)

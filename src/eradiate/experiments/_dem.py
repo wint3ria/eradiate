@@ -28,7 +28,7 @@ from ..scenes.geometry import (
     SceneGeometry,
     SphericalShellGeometry,
 )
-from ..scenes.integrators import PiecewiseVolPathIntegrator, VolPathIntegrator
+from ..scenes.integrators import EOVolPathIntegrator, PiecewiseVolPathIntegrator
 from ..scenes.measure import AbstractDistantMeasure, Measure, TargetPoint
 from ..scenes.surface import BasicSurface, DEMSurface
 
@@ -187,7 +187,7 @@ class DEMExperiment(EarthObservationExperiment):
             if piecewise_compatible:
                 self.integrator = PiecewiseVolPathIntegrator()
             else:
-                self.integrator = VolPathIntegrator()
+                self.integrator = EOVolPathIntegrator()
         else:
             if (
                 isinstance(self.integrator, PiecewiseVolPathIntegrator)

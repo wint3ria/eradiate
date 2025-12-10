@@ -30,9 +30,9 @@ from ..scenes.geometry import (
     SceneGeometry,
 )
 from ..scenes.integrators import (
+    EOVolPathIntegrator,
     PathIntegrator,
     PiecewiseVolPathIntegrator,
-    VolPathIntegrator,
 )
 from ..scenes.measure import AbstractDistantMeasure, Measure
 from ..scenes.shapes import RectangleShape
@@ -222,7 +222,7 @@ class CanopyAtmosphereExperiment(EarthObservationExperiment):
             if piecewise_compatible:
                 self.integrator = PiecewiseVolPathIntegrator()
             else:
-                self.integrator = VolPathIntegrator()
+                self.integrator = EOVolPathIntegrator()
         else:
             msg = ""
             if (
