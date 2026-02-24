@@ -11,7 +11,7 @@ import pint
 import xarray as xr
 from axsdb import AbsorptionDatabase, ErrorHandlingConfiguration
 
-from ._core import AbstractHeterogeneousAtmosphere
+from ._core import AtmosphericColumn
 from ..core import traverse
 from ..phase import PhaseFunction, RayleighPhaseFunction, phase_function_factory
 from ... import converters
@@ -33,7 +33,7 @@ def _default_absorption_data():
 
 
 @define(equals=False, slots=False)
-class AbstractMolecularAtmosphere(AbstractHeterogeneousAtmosphere):
+class AbstractMolecularAtmosphere(AtmosphericColumn):
     _absorption_data: AbsorptionDatabase = documented(
         attrs.field(
             kw_only=True,
