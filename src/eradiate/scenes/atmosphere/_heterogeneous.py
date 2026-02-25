@@ -14,7 +14,7 @@ import numpy as np
 import pint
 
 from ._core import AtmosphericColumn, atmosphere_factory
-from ._molecular import MolecularAtmosphere
+from ._molecular import GriddedMolecularAtmosphere, MolecularAtmosphere
 from ._particle_layer import ParticleLayer
 from ..core import traverse
 from ..phase import Multi1DPhaseFunction, Multi3DPhaseFunction, PhaseFunction
@@ -315,7 +315,10 @@ class HeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
 @define(eq=False, slots=False)
 class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
     molecular_atmosphere: GriddedMolecularAtmosphere | None = documented(
-        attrs.field(validator=attrs.validators.instance_of(GriddedMolecularAtmosphere)),
+        attrs.field(
+            validator=attrs.validators.instance_of(GriddedMolecularAtmosphere),
+            kw_only=True,
+        ),
         doc="TBD",
         type=".GriddedMolecularAtmosphere",
         init_type=".GriddedMolecularAtmosphere",
@@ -339,6 +342,7 @@ class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
             validator=attrs.validators.deep_iterable(
                 attrs.validators.instance_of(ParticleLayer)
             ),
+            kw_only=True,
         ),
         doc="List of particle layers. Elements may be specified as "
         "dictionaries interpreted by :data:`.atmosphere_factory`; in that "
