@@ -15,7 +15,12 @@ from ..core import (
     SceneElement,
     traverse,
 )
-from ..geometry import PlaneParallelGeometry, SceneGeometry, SphericalShellGeometry
+from ..geometry import (
+    PlaneParallelGeometry,
+    SceneGeometry,
+    SphericalShellGeometry,
+    XYGrid,
+)
 from ..phase import PhaseFunction
 from ..shapes import Shape
 from ... import validators
@@ -23,11 +28,10 @@ from ..._factory import Factory
 from ..._mode import get_mode
 from ...attrs import define, documented, get_doc
 from ...contexts import KernelContext
+from ...gridvolume import VolumeGridFactory
 from ...kernel import (
-    DictParameter,
     KernelSceneParameterFlags,
     SceneParameter,
-    SearchSceneParameter,
 )
 from ...radprops import ZGrid
 from ...spectral.index import SpectralIndex
@@ -342,10 +346,9 @@ class Atmosphere(CompositeSceneElement, ABC):
 
 
 @define(eq=False, slots=False)
-class AtmosphericColumn(Atmosphere, ABC):
+class AtmosphericMedium(Atmosphere, ABC):
     """
-    Abstract base for atmospheric media exposing an albedo, extinction, absorption,
-    scattering coefficients and a transmittance.
+    Abstract base class atmospheric mediums.
     """
 
     scale: float | None = documented(
@@ -439,7 +442,7 @@ class AtmosphericColumn(Atmosphere, ABC):
         zgrid : .ZGrid, optional
             Altitude grid on which evaluation is performed. If unset, an
             instance-specific default is used
-            (see :meth:`zgrid <.AtmosphericColumn.geometry.zgrid>`).
+            (see :meth:`zgrid <.AtmosphericMedium.geometry.zgrid>`).
 
         optional_fields : bool, optional, default: False
             If ``True``, also output the absorption and scattering coefficients,
@@ -543,7 +546,7 @@ class AtmosphericColumn(Atmosphere, ABC):
         zgrid : .ZGrid, optional
             Altitude grid on which evaluation is performed. If unset, an
             instance-specific default is used
-            (see :meth:`zgrid <.AtmosphericColumn.geometry.zgrid>`).
+            (see :meth:`zgrid <.AtmosphericMedium.geometry.zgrid>`).
 
         Returns
         -------
@@ -568,7 +571,7 @@ class AtmosphericColumn(Atmosphere, ABC):
         zgrid : .ZGrid, optional
             Altitude grid on which evaluation is performed. If unset, an
             instance-specific default is used
-            (see :meth:`zgrid <.AtmosphericColumn.geometry.zgrid>`).
+            (see :meth:`zgrid <.AtmosphericMedium.geometry.zgrid>`).
 
         Returns
         -------
@@ -592,7 +595,7 @@ class AtmosphericColumn(Atmosphere, ABC):
         zgrid : .ZGrid, optional
             Altitude grid on which evaluation is performed. If unset, an
             instance-specific default is used
-            (see :meth:`zgrid <.AtmosphericColumn.column.zgrid>`).
+            (see :meth:`zgrid <.AtmosphericMedium.column.zgrid>`).
 
         Returns
         -------
@@ -616,7 +619,7 @@ class AtmosphericColumn(Atmosphere, ABC):
         zgrid : .ZGrid, optional
             Altitude grid on which evaluation is performed. If unset, an
             instance-specific default is used
-            (see :meth:`zgrid <.AtmosphericColumn.geometry.zgrid>`).
+            (see :meth:`zgrid <.AtmosphericMedium.geometry.zgrid>`).
 
         Returns
         -------
@@ -661,7 +664,7 @@ class AtmosphericColumn(Atmosphere, ABC):
                 f"supported: {list(eval_sigma.keys())}"
             )
         dz = np.diff(self.geometry.zgrid.levels)
-        tau = np.sum((sigma * dz).to("1"))
+        tau = np.sum(np.multiply(sigma, dz).to("1"), axis=-1)
         return np.exp(-tau)
 
     def eval_transmittance_t(self, si: SpectralIndex) -> pint.Quantity:
@@ -682,44 +685,37 @@ class AtmosphericColumn(Atmosphere, ABC):
         # Inherit docstring
 
         extremum = None
-        sigma_t_id = f"{self.id}_sigma_t"
 
-        if isinstance(self.geometry, PlaneParallelGeometry):
+        albedo_grid_factory = VolumeGridFactory(unit=ureg.dimensionless, si_mode=True)
+        sigma_t_grid_factory = VolumeGridFactory(
+            unit=uck.get("collision_coefficient"), si_mode=True
+        )
+        volumes = {
+            "albedo": albedo_grid_factory.generate_template(
+                self.geometry, self.eval_albedo
+            ),
+            "sigma_t": sigma_t_grid_factory.generate_template(
+                self.geometry, self.eval_sigma_t
+            ),
+        }
+
+        sigma_t_id =  f"{self.id}_sigma_t"
+
+        if isinstance(self.geometry, SphericalShellGeometry | XYGrid):
+            medium = "heterogeneous"
+            if self.extremum_resolution != (1, 1, 1):
+            volume_rmin = self.geometry.atmosphere_volume_rmin
             to_world = self.geometry.atmosphere_volume_to_world
-
-            medium = "heterogeneous" if self.force_majorant else "piecewise"
-            volumes = {
-                "albedo": {
-                    "type": "gridvolume",
-                    "grid": DictParameter(
-                        lambda ctx: mi.VolumeGrid(
-                            np.reshape(
-                                self.eval_albedo(ctx.si).m_as(ureg.dimensionless),
-                                (-1, 1, 1),
-                            ).astype(np.float32)
-                        ),
-                    ),
-                    "to_world": to_world,
-                    "filter_type": "nearest",
-                },
-                "sigma_t": {
-                    "type": "gridvolume",
-                    "id": sigma_t_id,
-                    "grid": DictParameter(
-                        lambda ctx: mi.VolumeGrid(
-                            np.reshape(
-                                self.eval_sigma_t(ctx.si).m_as(
-                                    uck.get("collision_coefficient")
-                                ),
-                                (-1, 1, 1),
-                            ).astype(np.float32)
-                        ),
-                    ),
-                    "to_world": to_world,
-                    "filter_type": "nearest",
-                },
+            extremum = {
+                "type": "extremum_spherical",
+                "volume": {"type": "ref", "id": sigma_t_id},
+                "rmin": volume_rmin,
+                "resolution": self.extremum_resolution,
+                "to_world": to_world,
             }
-
+        elif isinstance(self.geometry, PlaneParallelGeometry):
+            medium = "heterogeneous" if self.force_majorant else "piecewise"
+            to_world = self.geometry.atmosphere_volume_to_world
             if medium == "heterogeneous":
                 if self.extremum_resolution != (1, 1, 1):
                     extremum = {
@@ -728,61 +724,6 @@ class AtmosphericColumn(Atmosphere, ABC):
                         "resolution": self.extremum_resolution,
                         "to_world": to_world,
                     }
-
-        elif isinstance(self.geometry, SphericalShellGeometry):
-            volume_rmin = self.geometry.atmosphere_volume_rmin
-            to_world = self.geometry.atmosphere_volume_to_world
-
-            medium = "heterogeneous"
-            volumes = {
-                "albedo": {
-                    "type": "sphericalcoordsvolume",
-                    "volume": {
-                        "type": "gridvolume",
-                        "grid": DictParameter(
-                            lambda ctx: mi.VolumeGrid(
-                                np.reshape(
-                                    self.eval_albedo(ctx.si).m_as(ureg.dimensionless),
-                                    (1, 1, -1),
-                                ).astype(np.float32)
-                            ),
-                        ),
-                        "filter_type": "nearest",
-                    },
-                    "to_world": to_world,
-                    "rmin": volume_rmin,
-                },
-                "sigma_t": {
-                    "type": "sphericalcoordsvolume",
-                    "id": sigma_t_id,
-                    "volume": {
-                        "type": "gridvolume",
-                        "grid": DictParameter(
-                            lambda ctx: mi.VolumeGrid(
-                                np.reshape(
-                                    self.eval_sigma_t(ctx.si).m_as(
-                                        uck.get("collision_coefficient")
-                                    ),
-                                    (1, 1, -1),
-                                ).astype(np.float32)
-                            ),
-                        ),
-                        "filter_type": "nearest",
-                    },
-                    "to_world": to_world,
-                    "rmin": volume_rmin,
-                },
-            }
-
-            if self.extremum_resolution != (1, 1, 1):
-                extremum = {
-                    "type": "extremum_spherical",
-                    "volume": {"type": "ref", "id": sigma_t_id},
-                    "rmin": volume_rmin,
-                    "resolution": self.extremum_resolution,
-                    "to_world": to_world,
-                }
-
         else:
             raise ValueError(
                 f"unhandled scene geometry type '{type(self.geometry).__name__}'"
@@ -806,6 +747,7 @@ class AtmosphericColumn(Atmosphere, ABC):
 
         if extremum is not None:
             result["extremum"] = extremum
+            result["sigma_t"]["id"] = sigma_t_id
 
         if medium == "heterogeneous":
             result["use_rrt"] = self.use_rrt
@@ -815,67 +757,41 @@ class AtmosphericColumn(Atmosphere, ABC):
     @property
     def _params_medium(self) -> dict[str, SceneParameter]:
         # Inherit docstring
+
+        albedo_grid_factory = VolumeGridFactory(unit=ureg.dimensionless, si_mode=True)
+        sigma_t_grid_factory = VolumeGridFactory(
+            unit=uck.get("collision_coefficient"), si_mode=True
+        )
+
         if isinstance(self.geometry, PlaneParallelGeometry):
-            return {
-                "albedo.data": SceneParameter(
-                    lambda ctx: np.reshape(
-                        self.eval_albedo(ctx.si).m_as(ureg.dimensionless),
-                        (-1, 1, 1, 1),
-                    ).astype(np.float32),
-                    KernelSceneParameterFlags.SPECTRAL,
-                    search=SearchSceneParameter(
-                        node_type=mi.Medium,
-                        node_id=self.medium_id,
-                        parameter_relpath="albedo.data",
-                    ),
-                ),
-                "sigma_t.data": SceneParameter(
-                    lambda ctx: np.reshape(
-                        self.eval_sigma_t(ctx.si).m_as(
-                            uck.get("collision_coefficient")
-                        ),
-                        (-1, 1, 1, 1),
-                    ).astype(np.float32),
-                    KernelSceneParameterFlags.SPECTRAL,
-                    search=SearchSceneParameter(
-                        node_type=mi.Medium,
-                        node_id=self.medium_id,
-                        parameter_relpath="sigma_t.data",
-                    ),
-                ),
-            }
-
+            albedo_key = "albedo.data"
+            sigma_t_key = "sigma_t.data"
         elif isinstance(self.geometry, SphericalShellGeometry):
-            return {
-                "albedo.volume.data": SceneParameter(
-                    lambda ctx: np.reshape(
-                        self.eval_albedo(ctx.si).m_as(ureg.dimensionless),
-                        (1, 1, -1, 1),
-                    ).astype(np.float32),
-                    KernelSceneParameterFlags.SPECTRAL,
-                    search=SearchSceneParameter(
-                        node_type=mi.Medium,
-                        node_id=self.medium_id,
-                        parameter_relpath="albedo.volume.data",
-                    ),
-                ),
-                "sigma_t.volume.data": SceneParameter(
-                    lambda ctx: np.reshape(
-                        self.eval_sigma_t(ctx.si).m_as(
-                            uck.get("collision_coefficient")
-                        ),
-                        (1, 1, -1, 1),
-                    ).astype(np.float32),
-                    KernelSceneParameterFlags.SPECTRAL,
-                    search=SearchSceneParameter(
-                        node_type=mi.Medium,
-                        node_id=self.medium_id,
-                        parameter_relpath="sigma_t.volume.data",
-                    ),
-                ),
-            }
-
-        else:  # Shouldn't happen, prevented by validator
+            albedo_key = "albedo.volume.data"
+            sigma_t_key = "sigma_t.volume.data"
+        else:
             raise ValueError(
                 f"unhandled scene geometry type '{type(self.geometry).__name__}'"
             )
+
+        albedo_search = dict(
+            node_type=mi.Medium, node_id=self.medium_id, parameter_relpath=albedo_key
+        )
+        sigma_t_search = dict(
+            node_type=mi.Medium, node_id=self.medium_id, parameter_relpath=sigma_t_key
+        )
+
+        return {
+            albedo_key: albedo_grid_factory.generate_params(
+                self.geometry,
+                self.eval_albedo,
+                KernelSceneParameterFlags.SPECTRAL,
+                albedo_search,
+            ),
+            sigma_t_key: sigma_t_grid_factory.generate_params(
+                self.geometry,
+                self.eval_sigma_t,
+                KernelSceneParameterFlags.SPECTRAL,
+                sigma_t_search,
+            ),
+        }
