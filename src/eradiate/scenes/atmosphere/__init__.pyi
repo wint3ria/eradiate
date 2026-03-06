@@ -1,7 +1,7 @@
 from ._core import AbstractHeterogeneousAtmosphere as AbstractHeterogeneousAtmosphere
 from ._core import Atmosphere as Atmosphere
 from ._core import atmosphere_factory as atmosphere_factory
-from ._heterogeneous import AtmosphericColumn as AtmosphericColumn
+from ._heterogeneous import AtmosphericMedium as AtmosphericMedium
 from ._heterogeneous import (
     GriddedHeterogeneousAtmosphere as GriddedHeterogeneousAtmosphere,
 )

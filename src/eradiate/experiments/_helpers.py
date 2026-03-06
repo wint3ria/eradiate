@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from ..scenes.atmosphere import (
     Atmosphere,
-    AtmosphericColumn,
+    AtmosphericMedium,
     MolecularAtmosphere,
 )
 from ..scenes.bsdfs import BSDF, bsdf_factory
@@ -152,7 +152,7 @@ def check_piecewise_compatible(
         )
         return False, debug_message
 
-    if atmosphere is None or not isinstance(atmosphere, AtmosphericColumn):
+    if atmosphere is None or not isinstance(atmosphere, AtmosphericMedium):
         debug_message = f"Piecewise integrator not compatible with medium type : {type(atmosphere)}."
         return False, debug_message
 

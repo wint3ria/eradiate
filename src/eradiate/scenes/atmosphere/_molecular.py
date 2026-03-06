@@ -12,7 +12,7 @@ import xarray as xr
 
 import eradiate
 
-from ._core import AtmosphericColumn
+from ._core import AtmosphericMedium
 from ..core import traverse
 from ..phase import PhaseFunction, RayleighPhaseFunction
 from ...attrs import define, documented
@@ -41,7 +41,7 @@ def _default_absorption_data():
 
 
 @define(eq=False, slots=False)
-class AbstractMolecularAtmosphere(AtmosphericColumn):
+class AbstractMolecularAtmosphere(AtmosphericMedium):
     _absorption_data: AbsorptionDatabase = documented(
         attrs.field(
             kw_only=True,

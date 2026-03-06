@@ -12,7 +12,7 @@ import mitsuba as mi
 import numpy as np
 import pint
 
-from ._core import AtmosphericColumn, atmosphere_factory
+from ._core import AtmosphericMedium, atmosphere_factory
 from ._molecular import GriddedMolecularAtmosphere, MolecularAtmosphere
 from ._particle_layer import ParticleLayer
 from ..core import traverse
@@ -56,7 +56,7 @@ def _particle_layer_converter(value):
 
 
 @define(eq=False, slots=False)
-class AbstractHeterogeneousAtmosphere(AtmosphericColumn):
+class AbstractHeterogeneousAtmosphere(AtmosphericMedium):
     """
     Abstract base class for heterogeneous atmospheres
     """
