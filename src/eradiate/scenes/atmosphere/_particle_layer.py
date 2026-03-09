@@ -17,6 +17,7 @@ import xarray as xr
 from ._core import AtmosphericMedium
 from ._particle_dist import ParticleDistribution, particle_distribution_factory
 from ..core import traverse
+from ..geometry import XYGrid
 from ..phase import TabulatedPhaseFunction
 from ... import converters
 from ...attrs import define, documented
@@ -159,7 +160,7 @@ class ParticleLayer(AtmosphericMedium):
         pinttr.field(
             units=ucc.deferred("dimensionless"),
             default=ureg.Quantity(0.2, ureg.dimensionless),
-            validator=[is_positive, pinttr.validators.has_compatible_units],
+            validator=pinttr.validators.has_compatible_units,
         ),
         doc="Extinction optical thickness at the reference wavelength.\n"
         "\n"
@@ -168,6 +169,32 @@ class ParticleLayer(AtmosphericMedium):
         init_type="quantity or float",
         default="0.2",
     )
+
+    @tau_ref.validator
+    def _tau_ref_all_positive(self, attribute, value):
+        if np.any(value < 0.0):
+            raise ValueError(
+                "While initialising ParticleLayer: reference "
+                "extinction optical thickness must be positive"
+            )
+
+    @tau_ref.validator
+    def _tau_ref_shape_validator(self, attribute, value):
+        if self.geometry is None:
+            return
+        if np.size(value) == 1:
+            return
+        if (
+            isinstance(self.geometry, XYGrid)
+            and value.shape != self.geometry.xy_resolution
+        ):
+            raise ValueError(
+                "While initialising ParticleLayer: the shape of the "
+                "extinction optical thickness is inconsistent with the "
+                "scene geometry. Expected a scalar value or a "
+                f"{self.geometry.wy_resolution} sized array, "
+                f"received a {value.shape} sized array."
+            )
 
     dataset: xr.Dataset = documented(
         attrs.field(
@@ -260,16 +287,30 @@ class ParticleLayer(AtmosphericMedium):
         Returns
         -------
         ndarray
-            Particle number fractions as a (n_layers,)-shaped array.
+            Particle number fractions as a ([x, y, ]n_layers,)-shaped array.
         """
         x = (zgrid.layers - self.bottom) / (self.top - self.bottom)
         fractions = self.distribution(x.m_as(ureg.dimensionless))
-        fractions /= np.sum(fractions)
+        fractions = fractions / np.sum(fractions, axis=-1)
+
+        # Broadcast 1D distributions on extra X and Y coordinates
+        if isinstance(self.geometry, XYGrid):
+            fractions = np.broadcast_to(
+                fractions, (*self.geometry.xy_resolution, len(x))
+            )
+
         return fractions
 
     def eval_mfp(self, ctx: KernelContext) -> pint.Quantity:
-        min_sigma_s = self.eval_sigma_s(ctx.si).min()
-        return 1.0 / min_sigma_s if min_sigma_s != 0.0 else np.inf * ureg.m
+        min_sigma_s = self.eval_sigma_s(ctx.si).min(axis=-1)
+        out = np.full(min_sigma_s.shape, np.inf)
+        np.divide(
+            np.ones(min_sigma_s.shape[:-1]),
+            min_sigma_s,
+            where=min_sigma_s != 0,
+            out=out,
+        )
+        return out * ureg.m
 
     # --------------------------------------------------------------------------
     #                       Radiative properties
@@ -278,8 +319,7 @@ class ParticleLayer(AtmosphericMedium):
     @cache_by_id
     def _eval_albedo_impl(self, w: pint.Quantity, zgrid: ZGrid) -> pint.Quantity:
         # Return albedo from dataset (without accounting for bypass switches)
-        # This routine is vectorized and returns an array of shape
-        # (n_wavelengths, n_layers)
+        # This routine returns an array of shape (n_wavelengths, [x, y, ]n_layers)
         ds = self.dataset
         wavelengths = w.m_as(ds.w.attrs["units"])
 
@@ -287,16 +327,23 @@ class ParticleLayer(AtmosphericMedium):
             interpolated = to_quantity(ds.albedo.sel(w=wavelengths, method="nearest"))
         else:
             interpolated = to_quantity(ds.albedo.interp(w=np.atleast_1d(wavelengths)))
-        where_present = np.reshape(self.eval_fractions(zgrid) > 0, (1, -1))
-        return interpolated * where_present
+
+        assert interpolated.ndim == 1 and interpolated.size == np.size(wavelengths)
+        fractions = self.eval_fractions(zgrid)
+        where_present = fractions > 0
+        where_present = where_present.reshape(
+            *np.ones(3 - fractions.ndim, dtype=int), *fractions.shape, 1
+        )
+        interpolated = interpolated.reshape(1, 1, interpolated.size, 1)
+
+        albedo = np.transpose(where_present @ interpolated, (3, 0, 1, 2))
+        return albedo
 
     @cache_by_id
     def _eval_sigma_t_impl(self, w: pint.Quantity, zgrid: ZGrid) -> pint.Quantity:
         # Return extinction coefficient from dataset (without accounting
-        # for bypass switches). This routine is vectorized and returns an
-        # array of shape (n_wavelengths, n_layers)
+        # for bypass switches). Returns an array of shape (n_wavelengths, [x, y, ]n_layers)
 
-        # Collect input data
         ds = self.dataset
         ds_w_units = ureg(ds.w.attrs["units"])
         wavelengths = np.atleast_1d(w.m_as(ds_w_units))
@@ -313,15 +360,20 @@ class ParticleLayer(AtmosphericMedium):
             )
 
         # Compute target optical thickness value
-        tau = self.tau_ref * sigma_t_star / sigma_t_star_ref
+        tau = (
+            np.atleast_3d(self.tau_ref)
+            @ np.reshape(sigma_t_star, (1, 1, -1))
+            / sigma_t_star_ref
+        )
 
         # Scatter this total OT to all layers
         # TODO: Make sure that axis order is consistent with other vectorized
         #  routines
         fractions = self.eval_fractions(zgrid)
-        tau_layers = np.broadcast_to(
-            np.reshape(tau, (-1, 1)), (len(wavelengths), zgrid.n_layers)
-        ) * np.reshape(fractions, (1, -1))
+
+        tau_layers = np.transpose(
+            tau[..., np.newaxis] @ fractions[..., np.newaxis, :], [2, 0, 1, 3]
+        )
 
         # Compute corresponding average coefficient
         sigma_t = tau_layers / zgrid.layer_height
