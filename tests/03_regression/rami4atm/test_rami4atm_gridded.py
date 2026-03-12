@@ -63,7 +63,12 @@ def test_rami4atm_gridded(mode_ckd_double, case, artefact_dir):
             ),
         )
 
-        exp = attrs.evolve(exp, atmosphere=atm, geometry=geometry)
+        exp = attrs.evolve(
+            exp,
+            atmosphere=atm,
+            geometry=geometry,
+            integrator={"type": "volpath", "moment": True},
+        )
 
         exps[i] = exp
 
