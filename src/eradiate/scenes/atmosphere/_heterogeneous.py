@@ -312,8 +312,11 @@ class HeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
 class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
     molecular_atmosphere: GriddedMolecularAtmosphere | None = documented(
         attrs.field(
-            validator=attrs.validators.instance_of(GriddedMolecularAtmosphere),
+            validator=attrs.validators.optional(
+                attrs.validators.instance_of(GriddedMolecularAtmosphere),
+            ),
             kw_only=True,
+            default=None,
         ),
         doc="TBD",
         type=".GriddedMolecularAtmosphere",
@@ -375,7 +378,10 @@ class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
             sigma_t_tab = component.eval_sigma_t(si, self.geometry.zgrid)
             for x in range(res_x):
                 for y in range(res_y):
-                    sigma_t_col = sigma_t_tab[x + y * res_x]
+                    if self.molecular_atmosphere is not None and i == 0:
+                        sigma_t_col = sigma_t_tab[x + y * res_x]
+                    else:
+                        sigma_t_col = sigma_t_tab[x, y]
                     result[i, x, y, :] = sigma_t_col.m_as(sigma_units)
 
         return result * sigma_units
@@ -410,7 +416,10 @@ class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
             sigma_s_tab = component.eval_sigma_s(si, self.geometry.zgrid)
             for x in range(res_x):
                 for y in range(res_y):
-                    sigma_s_col = sigma_s_tab[x + y * res_x]
+                    if self.molecular_atmosphere is not None and i == 0:
+                        sigma_s_col = sigma_s_tab[x + y * res_x]
+                    else:
+                        sigma_s_col = sigma_s_tab[x, y]
                     result[i, x, y, :] = sigma_s_col.m_as(sigma_units)
 
         return result * sigma_units
@@ -453,11 +462,11 @@ class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
                     for k in range(dim_y):
 
                         def eval_sigma_s(
-                            si: SpectralIndex, n_component: int = i, idx=i + dim_x * j
+                            si: SpectralIndex, n_component: int = i, idx_j=j, idx_k=k
                         ) -> np.ndarray:
                             return self._eval_sigma_s_component(si, n_component).m_as(
                                 sigma_units
-                            )[idx]  # TBD handle particles
+                            )[idx_j, idx_k]  # TBD handle particles
 
                         w_row.append(eval_sigma_s)
                     w_col.append(w_row)
