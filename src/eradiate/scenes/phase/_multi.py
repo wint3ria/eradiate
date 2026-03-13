@@ -193,47 +193,13 @@ class Multi3DPhaseFunction(Abstract3DBlendPhaseFunction):
         doc="Use multiple importance sampling. Default to True.",
     )
 
-    @classmethod
-    def from_onedim_to_grid(cls, phase: Abstract1DBlendPhaseFunction, xy_grid_shape):
-        if len(xy_grid_shape) != 2:
-            raise ValueError("The xy grid shape must be 2 dimensional")
-
-        X, Y = xy_grid_shape
-
-        weights = phase.weights
-        weights = [[[c] * X] * Y for c in weights]
-
-        return cls(
-            weights=weights,
-            components=phase.components,
-            geometry=phase.geometry,
-        )
-
-    def _shape(self, arraylike: list) -> tuple:
-        shape = []
-        current = arraylike
-        while isinstance(current, list):
-            shape.append(len(current))
-            current = current[0]
-        return tuple(shape)
-
     @cache_by_id
     def _eval_weights_impl(self, si: SpectralIndex) -> np.ndarray:
         if isinstance(self.weights, list):
-            weights_shape = self._shape(self.weights)
-            assert len(weights_shape) == 3, f"Expected 3D weights, got {weights_shape}"
-            weights = np.empty(weights_shape, dtype=np.float32)
-
-            weights = None
-            for c in range(weights_shape[0]):
-                for x in range(weights_shape[1]):
-                    for y in range(weights_shape[2]):
-                        wsi = self.weights[c][x][y](si)
-                        if weights is None:
-                            weights = np.empty(
-                                (*weights_shape, len(wsi)), dtype=np.float32
-                            )
-                        weights[c, x, y, :] = wsi
+            weights = []
+            for weight_func in self.weights:
+                weights.append(weight_func(si))
+            weights = np.stack(weights, dtype=np.float32)
 
         else:  # if isinstance(self.weights, np.ndarray):
             weights = np.array(self.weights, dtype=np.float32)
