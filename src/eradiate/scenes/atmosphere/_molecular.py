@@ -438,7 +438,9 @@ class GriddedMolecularAtmosphere(AbstractMolecularAtmosphere):
             eval_method(radprops_profile, si, zgrid)
             for radprops_profile in self._radprops_profile_grid
         ]
-        return properties
+        return np.stack(properties).reshape(
+            *self.geometry.xy_resolution, zgrid.n_layers
+        )
 
     def eval_albedo(
         self, si: SpectralIndex, zgrid: ZGrid | None = None
