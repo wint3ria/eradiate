@@ -341,11 +341,11 @@ def test_particle_layer_eval_sigma_t_impl(
 
     # Compute layer optical thickness at current wavelengths based on sigma_t
     # evaluation routine
-    sigma_t = layer._eval_sigma_t_impl(wavelengths, layer.geometry.zgrid)
+    sigma_t = np.squeeze(layer._eval_sigma_t_impl(wavelengths, layer.geometry.zgrid))
     assert sigma_t.units.is_compatible_with(ureg("m**-1"))
     assert sigma_t.shape == (n_wavelengths, n_layers)
     # -- Integrate sigma_t * dz vs space coordinate using rectangle method
-    tau = np.sum(sigma_t * layer.geometry.zgrid.layer_height, axis=1)
+    tau = np.sum(sigma_t * layer.geometry.zgrid.layer_height, axis=-1)
 
     # Manually compute extinction at running and reference wavelengths
     w_units = ureg(ds["w"].attrs["units"])
