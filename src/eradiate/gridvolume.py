@@ -82,7 +82,7 @@ def make_volume_grid_spherical_shell(
     if unit:
         grid = grid.m_as(unit)
     assert np.size(grid) > 0
-    shape = (shape_z, shape_y, shape_x)
+    shape = (shape_x, shape_y, shape_z)
     grid: np.ndarray = np.asarray(grid, dtype=dtype)
     if grid.size == 1:
         grid = np.full(shape, grid, dtype=dtype)
