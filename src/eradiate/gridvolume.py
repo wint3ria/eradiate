@@ -36,8 +36,9 @@ def make_volume_grid_plane_parallel(
     si_mode=False,
     to_mi=True,
     extra_dim=False,
+    extra_kwargs=None,
 ) -> np.ndarray | mi.VolumeGrid:
-    grid = eval_grid(ctx.si if si_mode else ctx)
+    grid = eval_grid(ctx.si if si_mode else ctx, **extra_kwargs)
     if unit:
         grid = grid.m_as(unit)
     assert np.size(grid) > 0
@@ -77,8 +78,9 @@ def make_volume_grid_spherical_shell(
     si_mode=False,
     to_mi=True,
     extra_dim=False,
+    extra_kwargs=None,
 ) -> np.ndarray | mi.VolumeGrid:
-    grid = eval_grid(ctx.si if si_mode else ctx)
+    grid = eval_grid(ctx.si if si_mode else ctx, **extra_kwargs)
     if unit:
         grid = grid.m_as(unit)
     assert np.size(grid) > 0
@@ -106,7 +108,8 @@ class _partial(partial):
         if hasattr(first, "__self__"):
             cls_name = first.__self__.__class__.__name__
             return f"partial({self.func.__name__}, {cls_name}.{first.__name__}, extra_parameters={list(self.keywords)})"
-        return f"partial({self.func.__name__}, extra_parameters={list(self.keywords)})"
+        kws = [k for k, v in self.keywords if v is not None]
+        return f"partial({self.func.__name__}, extra_parameters={kws})"
 
     def get_bound_instance(self):
         first = next(iter(self.keywords.values()), None)
@@ -187,6 +190,7 @@ class VolumeGridFactory(ABC):
         partial_factory: Callable,
         filter_type_kw: str,
         wrap_mode_kw: str,
+        include_to_world: bool,
     ):
         raise NotImplementedError(
             f"Geometric type {type(geometry)} is not supported by VolumeGridFactory"
@@ -199,13 +203,20 @@ class VolumeGridFactory(ABC):
         partial_factory: Callable,
         filter_type_kw: str,
         wrap_mode_kw: str,
+        include_to_world: bool,
     ):
+        to_world = {}
+        if include_to_world:
+            to_world = {
+                "to_world": geometry.atmosphere_volume_to_world,
+            }
+
         return {
             "type": "gridvolume",
             "grid": DictParameter(partial_factory),
             "filter_type": filter_type_kw,
             "wrap_mode": wrap_mode_kw,
-            "to_world": geometry.atmosphere_volume_to_world,
+            **to_world,
         }
 
     @_postprocess_template.register
@@ -215,8 +226,14 @@ class VolumeGridFactory(ABC):
         partial_factory: Callable,
         filter_type_kw: str,
         wrap_mode_kw: str,
+        include_to_world: bool,
     ):
         volume_rmin = geometry.atmosphere_volume_rmin
+        to_world = {}
+        if include_to_world:
+            to_world = {
+                "to_world": geometry.atmosphere_volume_to_world,
+            }
 
         return {
             "type": "sphericalcoordsvolume",
@@ -226,25 +243,9 @@ class VolumeGridFactory(ABC):
                 "filter_type": filter_type_kw,
                 "wrap_mode": wrap_mode_kw,
             },
-            "to_world": geometry.atmosphere_volume_to_world,
+            **to_world,
             "rmin": volume_rmin,
         }
-
-    @singledispatchmethod
-    def _postprocess_params(
-        self, geometry: Any, partial_factory: Callable, flags, **search_kwargs
-    ):
-        raise NotImplementedError(
-            f"Geometric type {type(geometry)} is not supported by VolumeGridFactory"
-        )
-
-    @_postprocess_params.register
-    def _(
-        self, geometry: PlaneParallelGeometry, partial_factory, flags, **search_kwargs
-    ):
-        return SceneParameter(
-            partial_factory, flags, search=SearchSceneParameter(**search_kwargs)
-        )
 
     def generate_template(
         self,
@@ -254,6 +255,8 @@ class VolumeGridFactory(ABC):
         wrap_mode=None,
         si_mode=None,
         unit=None,
+        extra_kwargs=None,
+        include_to_world=None,
     ) -> dict:
         filter_type = filter_type or str(geometry.filter_type)
         wrap_mode = wrap_mode or str(geometry.wrap_mode)
@@ -261,6 +264,9 @@ class VolumeGridFactory(ABC):
         shape_x, shape_y = VolumeGridFactory.xy_shape(geometry)
         si_mode = si_mode or self.si_mode
         unit = unit or self.unit
+        extra_kwargs = extra_kwargs or {}
+        if include_to_world is None:
+            include_to_world = True
 
         factory = self._partial_factory(geometry)
 
@@ -274,10 +280,11 @@ class VolumeGridFactory(ABC):
             dtype=self.dtype,
             unit=unit,
             si_mode=si_mode,
+            extra_kwargs=extra_kwargs,
         )
 
         return self._postprocess_template(
-            geometry, partial_factory, filter_type, wrap_mode
+            geometry, partial_factory, filter_type, wrap_mode, include_to_world
         )
 
     def generate_params(
@@ -285,14 +292,20 @@ class VolumeGridFactory(ABC):
         geometry: SceneGeometry,
         eval_grid: Callable,
         flag,
-        search_kwargs,
+        search_kwargs=None,
         si_mode=None,
         unit=None,
+        extra_kwargs=None,
     ) -> SceneParameter:
         n_layers = geometry.zgrid.n_layers
         shape_x, shape_y = VolumeGridFactory.xy_shape(geometry)
         si_mode = si_mode or self.si_mode
         unit = unit or self.unit
+        extra_kwargs = extra_kwargs or {}
+
+        search = None
+        if search_kwargs:
+            search = SearchSceneParameter(**search_kwargs)
 
         factory = self._partial_factory(geometry)
 
@@ -308,8 +321,7 @@ class VolumeGridFactory(ABC):
             si_mode=si_mode,
             extra_dim=True,
             to_mi=False,
+            extra_kwargs=extra_kwargs,
         )
 
-        return SceneParameter(
-            partial_factory, flag, search=SearchSceneParameter(**search_kwargs)
-        )
+        return SceneParameter(partial_factory, flag, search=search)
