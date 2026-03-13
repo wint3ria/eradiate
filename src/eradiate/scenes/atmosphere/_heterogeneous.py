@@ -370,22 +370,13 @@ class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
 
     @cache_by_id
     def _eval_sigma_t_impl(self, si: SpectralIndex) -> pint.Quantity:
-        resolution = self.geometry.xy_resolution
-        res_x, res_y = resolution
-        result = np.zeros(
-            (len(self.components), res_x, res_y, self.geometry.zgrid.n_layers)
-        )
-        sigma_units = ucc.get("collision_coefficient")
+        result = []
 
         # Evaluate scattering coefficient for current component
-        for i, component in enumerate(self.components):
-            sigma_t_tab = component.eval_sigma_t(si, self.geometry.zgrid)
-            for x in range(res_x):
-                for y in range(res_y):
-                    sigma_t_col = sigma_t_tab[x, y]
-                    result[i, x, y, :] = sigma_t_col.m_as(sigma_units)
+        for component in self.components:
+            result.append(component.eval_sigma_t(si, self.geometry.zgrid))
 
-        return result * sigma_units
+        return np.stack(result)
 
     def eval_sigma_t(
         self, si: SpectralIndex, zgrid: ZGrid | None = None
@@ -405,22 +396,13 @@ class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
 
     @cache_by_id
     def _eval_sigma_s_impl(self, si: SpectralIndex) -> pint.Quantity:
-        resolution = self.geometry.xy_resolution
-        res_x, res_y = resolution
-        result = np.zeros(
-            (len(self.components), res_x, res_y, self.geometry.zgrid.n_layers)
-        )
-        sigma_units = ucc.get("collision_coefficient")
+        result = []
 
         # Evaluate scattering coefficient for current component
-        for i, component in enumerate(self.components):
-            sigma_s_tab = component.eval_sigma_s(si, self.geometry.zgrid)
-            for x in range(res_x):
-                for y in range(res_y):
-                    sigma_s_col = sigma_s_tab[x, y]
-                    result[i, x, y, :] = sigma_s_col.m_as(sigma_units)
+        for component in self.components:
+            result.append(component.eval_sigma_s(si, self.geometry.zgrid))
 
-        return result * sigma_units
+        return np.stack(result)
 
     def _eval_sigma_s_component(
         self, si: SpectralIndex, n_component: int
@@ -449,26 +431,15 @@ class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
             components, weights = [], []
             sigma_units = ucc.get("collision_coefficient")
 
-            dim_x, dim_y = self.geometry.xy_resolution
-
             for i, component in enumerate(self.components):
                 components.append(component.phase)
 
-                w_col = []
-                for j in range(dim_x):
-                    w_row = []
-                    for k in range(dim_y):
+                def eval_sigma_s(si: SpectralIndex, n_component: int = i) -> np.ndarray:
+                    return self._eval_sigma_s_component(si, n_component).m_as(
+                        sigma_units
+                    )
 
-                        def eval_sigma_s(
-                            si: SpectralIndex, n_component: int = i, idx_j=j, idx_k=k
-                        ) -> np.ndarray:
-                            return self._eval_sigma_s_component(si, n_component).m_as(
-                                sigma_units
-                            )[idx_j, idx_k]  # TBD handle particles
-
-                        w_row.append(eval_sigma_s)
-                    w_col.append(w_row)
-                weights.append(w_col)
+                weights.append(eval_sigma_s)
 
             return Multi3DPhaseFunction(
                 components=components, weights=weights, geometry=self.geometry
