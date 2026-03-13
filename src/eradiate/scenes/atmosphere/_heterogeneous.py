@@ -378,10 +378,7 @@ class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
             sigma_t_tab = component.eval_sigma_t(si, self.geometry.zgrid)
             for x in range(res_x):
                 for y in range(res_y):
-                    if self.molecular_atmosphere is not None and i == 0:
-                        sigma_t_col = sigma_t_tab[x + y * res_x]
-                    else:
-                        sigma_t_col = sigma_t_tab[x, y]
+                    sigma_t_col = sigma_t_tab[x, y]
                     result[i, x, y, :] = sigma_t_col.m_as(sigma_units)
 
         return result * sigma_units
@@ -416,10 +413,7 @@ class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
             sigma_s_tab = component.eval_sigma_s(si, self.geometry.zgrid)
             for x in range(res_x):
                 for y in range(res_y):
-                    if self.molecular_atmosphere is not None and i == 0:
-                        sigma_s_col = sigma_s_tab[x + y * res_x]
-                    else:
-                        sigma_s_col = sigma_s_tab[x, y]
+                    sigma_s_col = sigma_s_tab[x, y]
                     result[i, x, y, :] = sigma_s_col.m_as(sigma_units)
 
         return result * sigma_units
