@@ -43,20 +43,6 @@ def _prepare_grid(
     return grid
 
 
-def _finalize_grid(
-    grid: np.ndarray, extra_dim: bool, to_mi: bool
-) -> np.ndarray | mi.VolumeGrid:
-    """
-    Optionally append a trailing dimension and convert to a Mitsuba
-    ``VolumeGrid``.
-    """
-    if extra_dim:
-        grid = grid.reshape(*grid.shape, 1)
-    if to_mi:
-        return mi.VolumeGrid(grid)
-    return grid
-
-
 def make_volume_grid(
     geometry: SceneGeometry,
     ctx: KernelContext,
@@ -72,6 +58,9 @@ def make_volume_grid(
     Evaluate a grid function and reshape it to the layout expected by Mitsuba
     for the given geometry.
 
+    Optionally append a trailing dimension and convert to a Mitsuba
+    ``VolumeGrid``.
+
     For :class:`.PlaneParallelGeometry` the grid is transposed from
     ``(x, y, z)`` to ``(z, y, x)``. For :class:`.SphericalShellGeometry` the
     ``(x, y, z)`` layout is used as-is.
@@ -85,7 +74,11 @@ def make_volume_grid(
     )
     if isinstance(geometry, PlaneParallelGeometry):
         grid = grid.T
-    return _finalize_grid(grid, extra_dim, to_mi)
+    if extra_dim:
+        grid = grid.reshape(*grid.shape, 1)
+    if to_mi:
+        return mi.VolumeGrid(grid)
+    return grid
 
 
 class _partial(partial):
