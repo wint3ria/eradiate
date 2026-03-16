@@ -9,6 +9,7 @@ import numpy as np
 from .contexts import KernelContext
 from .kernel import (
     DictParameter,
+    KernelSceneParameterFlags,
     SceneParameter,
     SearchSceneParameter,
 )
@@ -21,22 +22,38 @@ from .scenes.geometry import (
 
 
 def _prepare_grid(
-    eval_grid, ctx, spectral_index, unit, dtype, extra_kwargs, shape_xyz
+    eval_grid, ctx, spectral_index, dtype, shape_xyz, extra_kwargs=None, units=None
 ) -> np.ndarray:
     """
-    Evaluate, convert and broadcast a grid to the target shape ``(x, y, z)``.
+    Evaluate, convert and broadcast a grid to the target shape ``(x, y, z)``
+    if ``shape_xyz`` is not None. Implements the broadcasting logic of
+    Eradiate atmospheric properties.
 
-    Scalars and 1-D z-column arrays are broadcast. Any other shape mismatch
-    raises a ``ValueError``.
+    If shape_xyz is ``None``, the eval_grid returns one dimensional
+    properties corresponding to a 1D plane parallel atmosphere geometry.
+
+    Otherwise Scalars and 1-D z-column arrays are broadcast to ``shape_xyz``.
+    Any other shape mismatch raises a ``ValueError``.
+
+    Performs data type conversion of evaluated grids to ``dtype``. Optionally
+    performs units conversion to ``units``
     """
     grid = eval_grid(ctx.si if spectral_index else ctx, **extra_kwargs)
-    if unit:
-        grid = grid.m_as(unit)
-    assert np.size(grid) > 0
+    if units:
+        grid = grid.m_as(units)
     grid = np.asarray(grid, dtype=dtype)
+    assert np.size(grid) > 0
+    if shape_xyz is None:
+        if np.squeeze(grid).ndim > 1:
+            raise ValueError(
+                "Evaluation of a non 1D grid for an undefined target shape "
+                f"Evaluated grid shape: {grid.shape} is not 1D. Could not "
+                "infer a grid volume shape."
+            )
+        return grid.reshape(1, 1, -1)
     if grid.size == 1:
         return np.broadcast_to(grid, shape_xyz)
-    if np.squeeze(grid).shape == (shape_xyz[2],):
+    elif np.squeeze(grid).shape == (shape_xyz[2],):
         return np.broadcast_to(grid.reshape(1, 1, -1), shape_xyz)
     if grid.shape != shape_xyz:
         raise ValueError(f"Invalid grid shape, expected {shape_xyz}, got {grid.shape}")
@@ -48,7 +65,7 @@ def make_volume_grid(
     ctx: KernelContext,
     eval_grid=None,
     dtype=None,
-    unit=None,
+    units=None,
     spectral_index=True,
     to_mi=True,
     extra_dim=False,
@@ -61,16 +78,26 @@ def make_volume_grid(
     Optionally append a trailing dimension and convert to a Mitsuba
     ``VolumeGrid``.
 
+    Raises ``ValueError`` if geometry is None and the grid is not one dimensional.
+
     For :class:`.PlaneParallelGeometry` the grid is transposed from
     ``(x, y, z)`` to ``(z, y, x)``. For :class:`.SphericalShellGeometry` the
     ``(x, y, z)`` layout is used as-is.
     """
-    shape = (
-        *(geometry.xy_resolution if isinstance(geometry, XYGrid) else (1, 1)),
-        geometry.zgrid.n_layers,
-    )
+    shape = None
+    if geometry is not None:
+        shape = (
+            *(geometry.xy_resolution if isinstance(geometry, XYGrid) else (1, 1)),
+            geometry.zgrid.n_layers,
+        )
     grid = _prepare_grid(
-        eval_grid, ctx, spectral_index, unit, dtype, extra_kwargs, shape
+        eval_grid,
+        ctx,
+        spectral_index,
+        dtype,
+        shape,
+        extra_kwargs=extra_kwargs,
+        units=units,
     )
     if isinstance(geometry, PlaneParallelGeometry):
         grid = grid.T
@@ -102,15 +129,11 @@ def _postprocess_template(
     partial_factory: Callable,
     filter_type_kw: str,
     wrap_mode_kw: str,
-    include_to_world: bool,
 ) -> dict:
     """
     Build a Mitsuba kernel dict for a gridvolume plugin, wrapping it in a
     ``sphericalcoordsvolume`` for :class:`.SphericalShellGeometry`.
     """
-    to_world = (
-        {"to_world": geometry.atmosphere_volume_to_world} if include_to_world else {}
-    )
     gridvolume = {
         "type": "gridvolume",
         "grid": DictParameter(partial_factory),
@@ -118,27 +141,27 @@ def _postprocess_template(
         "wrap_mode": wrap_mode_kw,
     }
     if isinstance(geometry, SphericalShellGeometry):
-        return {
+        gridvolume = {
             "type": "sphericalcoordsvolume",
             "volume": gridvolume,
-            **to_world,
             "rmin": geometry.atmosphere_volume_rmin,
         }
-    return {**gridvolume, **to_world}
+    if geometry is not None:
+        gridvolume["to_world"] = geometry.atmosphere_volume_to_world
+    return gridvolume
 
 
 def generate_gridvolume(
     geometry: SceneGeometry,
     eval_grid: Callable,
-    flag=None,
+    flag: KernelSceneParameterFlags | None = None,
     search: SearchSceneParameter | None = None,
-    filter_type=None,
-    wrap_mode=None,
-    spectral_index=True,
-    unit=None,
-    dtype=np.float32,
-    extra_kwargs=None,
-    include_to_world=True,
+    filter_type: str | None = None,
+    wrap_mode: str | None = None,
+    spectral_index: bool = True,
+    units=None,
+    dtype: type = np.float32,
+    extra_kwargs: dict | None = None,
 ) -> dict | SceneParameter:
     """
     Generate a gridvolume kernel dict or a scene parameter update object.
@@ -146,6 +169,9 @@ def generate_gridvolume(
     When ``flag`` is ``None``, a Mitsuba kernel dict suitable for scene
     construction is returned. When ``flag`` is set, a :class:`.SceneParameter`
     intended for scene parameter updates is returned instead.
+
+    If geometry is none, the 1D plane parallel case is assumed and the Z
+    coordinate shape is inferred from the return value of ``eval_grid``.
 
     Parameters
     ----------
@@ -180,18 +206,14 @@ def generate_gridvolume(
     spectral_index : bool, optional, default: False
         If ``True``, pass ``ctx.si`` instead of ``ctx`` to ``eval_grid``.
 
-    unit : pint.Unit, optional
-        If set, convert grid values to this unit before processing.
+    units : pint.Unit, optional
+    If set, convert grid values to these units before processing.
 
     dtype : numpy.dtype, optional, default: numpy.float32
         NumPy dtype of the resulting grid buffer.
 
     extra_kwargs : dict, optional
         Additional keyword arguments forwarded to ``eval_grid``.
-
-    include_to_world : bool, optional, default: True
-        Whether to include the ``to_world`` transform in the kernel dict.
-        Only used when ``flag`` is ``None``.
 
     Returns
     -------
@@ -225,7 +247,7 @@ def generate_gridvolume(
         geometry,
         eval_grid=eval_grid,
         dtype=dtype,
-        unit=unit,
+        units=units,
         spectral_index=spectral_index,
         extra_dim=flag is not None,
         to_mi=flag is None,
@@ -233,10 +255,16 @@ def generate_gridvolume(
     )
     if flag is not None:
         return SceneParameter(pf, flag, search=search)
+    if geometry is None:
+        filter_type = str(filter_type or "nearest")
+        wrap_mode = str(wrap_mode or "clamp")
+    else:
+        filter_type = str(filter_type or geometry.filter_type)
+        wrap_mode = str(wrap_mode or geometry.wrap_mode)
+
     return _postprocess_template(
         geometry,
         pf,
-        filter_type or str(geometry.filter_type),
-        wrap_mode or str(geometry.wrap_mode),
-        include_to_world,
+        filter_type,
+        wrap_mode,
     )

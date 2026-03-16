@@ -691,13 +691,13 @@ class AtmosphericMedium(Atmosphere, ABC):
         albedo_grid = generate_gridvolume(
             self.geometry,
             self.eval_albedo,
-            unit=ureg.dimensionless,
+            units=ureg.dimensionless,
             dtype=np.float64,
         )
         sigma_t_grid = generate_gridvolume(
             self.geometry,
             self.eval_sigma_t,
-            unit=uck.get("collision_coefficient"),
+            units=uck.get("collision_coefficient"),
             dtype=np.float64,
         )
         volumes = {
@@ -784,7 +784,7 @@ class AtmosphericMedium(Atmosphere, ABC):
         albedo_grid = generate_gridvolume(
             self.geometry,
             self.eval_albedo,
-            unit=ureg.dimensionless,
+            units=ureg.dimensionless,
             search=albedo_search,
             flag=KernelSceneParameterFlags.SPECTRAL,
             dtype=np.float64,
@@ -792,7 +792,7 @@ class AtmosphericMedium(Atmosphere, ABC):
         sigma_t_grid = generate_gridvolume(
             self.geometry,
             self.eval_sigma_t,
-            unit=uck.get("collision_coefficient"),
+            units=uck.get("collision_coefficient"),
             search=sigma_t_search,
             flag=KernelSceneParameterFlags.SPECTRAL,
             dtype=np.float64,
