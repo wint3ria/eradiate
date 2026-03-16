@@ -9,6 +9,8 @@ import numpy as np
 import pint
 import xarray as xr
 
+from eradiate.kernel._render import SearchSceneParameter
+
 from ..core import (
     CompositeSceneElement,
     SceneElement,
@@ -25,7 +27,7 @@ from ..shapes import Shape
 from ..._factory import Factory
 from ...attrs import define, documented, get_doc
 from ...contexts import KernelContext
-from ...gridvolume import VolumeGridFactory
+from ...gridvolume import generate_gridvolume
 from ...kernel import (
     KernelSceneParameterFlags,
     SceneParameter,
@@ -647,17 +649,21 @@ class AtmosphericMedium(Atmosphere, ABC):
     def _template_medium(self) -> dict:
         # Inherit docstring
 
-        albedo_grid_factory = VolumeGridFactory(unit=ureg.dimensionless, si_mode=True)
-        sigma_t_grid_factory = VolumeGridFactory(
-            unit=uck.get("collision_coefficient"), si_mode=True
+        albedo_grid = generate_gridvolume(
+            self.geometry,
+            self.eval_albedo,
+            unit=ureg.dimensionless,
+            dtype=np.float64,
+        )
+        sigma_t_grid = generate_gridvolume(
+            self.geometry,
+            self.eval_sigma_t,
+            unit=uck.get("collision_coefficient"),
+            dtype=np.float64,
         )
         volumes = {
-            "albedo": albedo_grid_factory.generate_template(
-                self.geometry, self.eval_albedo
-            ),
-            "sigma_t": sigma_t_grid_factory.generate_template(
-                self.geometry, self.eval_sigma_t
-            ),
+            "albedo": albedo_grid,
+            "sigma_t": sigma_t_grid,
         }
 
         if isinstance(self.geometry, SphericalShellGeometry | XYGrid):
@@ -686,11 +692,6 @@ class AtmosphericMedium(Atmosphere, ABC):
     def _params_medium(self) -> dict[str, SceneParameter]:
         # Inherit docstring
 
-        albedo_grid_factory = VolumeGridFactory(unit=ureg.dimensionless, si_mode=True)
-        sigma_t_grid_factory = VolumeGridFactory(
-            unit=uck.get("collision_coefficient"), si_mode=True
-        )
-
         if isinstance(self.geometry, PlaneParallelGeometry):
             albedo_key = "albedo.data"
             sigma_t_key = "sigma_t.data"
@@ -702,24 +703,30 @@ class AtmosphericMedium(Atmosphere, ABC):
                 f"unhandled scene geometry type '{type(self.geometry).__name__}'"
             )
 
-        albedo_search = dict(
+        albedo_search = SearchSceneParameter(
             node_type=mi.Medium, node_id=self.medium_id, parameter_relpath=albedo_key
         )
-        sigma_t_search = dict(
+        sigma_t_search = SearchSceneParameter(
             node_type=mi.Medium, node_id=self.medium_id, parameter_relpath=sigma_t_key
+        )
+        albedo_grid = generate_gridvolume(
+            self.geometry,
+            self.eval_albedo,
+            unit=ureg.dimensionless,
+            search=albedo_search,
+            flag=KernelSceneParameterFlags.SPECTRAL,
+            dtype=np.float64,
+        )
+        sigma_t_grid = generate_gridvolume(
+            self.geometry,
+            self.eval_sigma_t,
+            unit=uck.get("collision_coefficient"),
+            search=sigma_t_search,
+            flag=KernelSceneParameterFlags.SPECTRAL,
+            dtype=np.float64,
         )
 
         return {
-            albedo_key: albedo_grid_factory.generate_params(
-                self.geometry,
-                self.eval_albedo,
-                KernelSceneParameterFlags.SPECTRAL,
-                albedo_search,
-            ),
-            sigma_t_key: sigma_t_grid_factory.generate_params(
-                self.geometry,
-                self.eval_sigma_t,
-                KernelSceneParameterFlags.SPECTRAL,
-                sigma_t_search,
-            ),
+            albedo_key: albedo_grid,
+            sigma_t_key: sigma_t_grid,
         }
