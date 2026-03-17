@@ -152,7 +152,7 @@ def _postprocess_template(
 
 
 def generate_gridvolume(
-    geometry: SceneGeometry,
+    geometry: SceneGeometry | None,
     eval_grid: Callable,
     flag: KernelSceneParameterFlags | None = None,
     search: SearchSceneParameter | None = None,
@@ -170,12 +170,12 @@ def generate_gridvolume(
     construction is returned. When ``flag`` is set, a :class:`.SceneParameter`
     intended for scene parameter updates is returned instead.
 
-    If geometry is none, the 1D plane parallel case is assumed and the Z
+    If geometry is None, the 1D plane parallel case is assumed and the Z
     coordinate shape is inferred from the return value of ``eval_grid``.
 
     Parameters
     ----------
-    geometry : .SceneGeometry
+    geometry : .SceneGeometry or NoneType
         Scene geometry driving the grid shape and coordinate layout.
 
     eval_grid : callable
