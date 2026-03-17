@@ -60,7 +60,6 @@ def test_rami4atm_gridded(mode_ckd_double, case, artefact_dir):
                 geometry=geometry,
                 absorption_data=mol_atm_1d.absorption_data,
                 thermoprops_grid=thermoprops_grid,
-                grid_resolution=resolution,
                 has_absorption=mol_atm_1d.has_absorption,
                 has_scattering=mol_atm_1d.has_scattering,
             )
