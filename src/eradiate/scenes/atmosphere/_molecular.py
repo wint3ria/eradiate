@@ -317,20 +317,6 @@ def thermoprops_grid_converter(parameter) -> list[xr.Dataset]:
 
 @define(eq=False, slots=False)
 class GriddedMolecularAtmosphere(AbstractMolecularAtmosphere):
-    # TBD : attrs post init check geometry is gridded
-    _grid_resolution: tuple[int, int] = documented(
-        attrs.field(
-            kw_only=True,
-            converter=tuple,
-            validator=attrs.validators.instance_of(tuple),
-            default=(3, 3),
-        ),
-        doc="TBD",
-        type="tuple(int,int)",
-        init_type="tuple(int, int)",
-        default="(3,3)",
-    )
-
     _thermoprops_grid: list[xr.Dataset] = documented(
         attrs.field(
             kw_only=True,
@@ -355,22 +341,6 @@ class GriddedMolecularAtmosphere(AbstractMolecularAtmosphere):
         default="None",
     )
 
-    @_grid_resolution.validator
-    def _validate_grid(self, attribute, value):
-        x_dim, y_dim = value
-        size = x_dim * y_dim
-        assert len(self._thermoprops_grid) == size
-        if self._radprops_profile_grid is not None:
-            assert len(self._radprops_profile_grid) == size
-
-    @property
-    def grid_size(self):
-        return self._grid_resolution[0] * self._grid_resolution[1]
-
-    @property
-    def grid_resolution(self):
-        return self._grid_resolution
-
     @property
     def thermoprops_grid(self) -> list[xr.Dataset]:
         return self._thermoprops_grid
@@ -382,7 +352,7 @@ class GriddedMolecularAtmosphere(AbstractMolecularAtmosphere):
     def update(self) -> None:
         self.phase.id = self.phase_id
         radprofiles = []
-        for i, thermoprops in enumerate(self._thermoprops_grid):
+        for thermoprops in self._thermoprops_grid:
             radprofiles.append(
                 AtmosphereRadProfile(
                     thermoprops=thermoprops,
@@ -414,8 +384,6 @@ class GriddedMolecularAtmosphere(AbstractMolecularAtmosphere):
         return np.divide(
             1.0, min_sigma_s, where=min_sigma_s != 0.0, out=np.array([np.inf])
         )
-
-    # TBD handle shape of the atmophere? Shape type is not compatible with 3D
 
     def apply_radprops_profiles(
         self, si: SpectralIndex, zgrid: Zgrid | None, eval_method
