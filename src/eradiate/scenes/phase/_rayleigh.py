@@ -3,17 +3,18 @@ from __future__ import annotations
 import typing as t
 
 import attrs
-import mitsuba as mi
 import numpy as np
 
 import eradiate
+from eradiate.gridvolume import generate_gridvolume
 
 from ._core import PhaseFunction
 from ..geometry import PlaneParallelGeometry, SceneGeometry, SphericalShellGeometry
 from ...attrs import define, documented
 from ...contexts import KernelContext
-from ...kernel import DictParameter, KernelSceneParameterFlags, SceneParameter
+from ...kernel import KernelSceneParameterFlags, SceneParameter
 from ...spectral.index import SpectralIndex
+from ...util.misc import cache_by_id
 
 
 @define(eq=False, slots=False)
@@ -56,18 +57,7 @@ class RayleighPhaseFunction(PhaseFunction):
         default="None",
     )
 
-    def _eval_depolarization_factor_impl(self, si: SpectralIndex) -> np.ndarray:
-        if isinstance(self.depolarization, t.Callable):
-            depolarization = self.depolarization(si)
-        elif isinstance(self.depolarization, np.ndarray):
-            depolarization = np.atleast_1d(self.depolarization)
-        elif self.depolarization is None:
-            depolarization = np.zeros((1,))
-        else:
-            NotImplementedError
-
-        return depolarization
-
+    @cache_by_id
     def eval_depolarization_factor(self, si: SpectralIndex) -> np.ndarray:
         """
         Evaluate the depolarization factor.
@@ -83,58 +73,30 @@ class RayleighPhaseFunction(PhaseFunction):
             either be 1 or the number of layers of the atmosphere's vertical
             axis.
         """
-        depolarization = self._eval_depolarization_factor_impl(si)
+        if isinstance(self.depolarization, t.Callable):
+            depolarization = self.depolarization(si)
+        elif isinstance(self.depolarization, np.ndarray):
+            depolarization = np.atleast_1d(self.depolarization)
+        elif self.depolarization is None:
+            depolarization = np.zeros((1,))
+        else:
+            raise NotImplementedError()
+
         return depolarization
 
     @property
     def template(self) -> dict:
         if eradiate.mode().is_polarized:
-            result = {"type": "rayleigh_polarized"}
-            if self.geometry is None:
-                to_world = mi.ScalarTransform4f()
-                filter_type = "nearest"
-                wrap_mode = "clamp"
-            else:
-                to_world = self.geometry.atmosphere_volume_to_world
-                filter_type = str(self.geometry.filter_type)
-                wrap_mode = str(self.geometry.wrap_mode)
+            depolarization_grid = generate_gridvolume(
+                self.geometry,
+                self.eval_depolarization_factor,
+            )
 
-            if self.geometry is None or isinstance(
-                self.geometry, PlaneParallelGeometry
-            ):
-                result["depolarization.type"] = "gridvolume"
-                result["depolarization.grid"] = DictParameter(
-                    lambda ctx: mi.VolumeGrid(
-                        np.reshape(
-                            self.eval_depolarization_factor(ctx.si),
-                            (-1, 1, 1),
-                        ).astype(np.float32),
-                    ),
-                )
-                result["depolarization.to_world"] = to_world
-                result["depolarization.filter_type"] = filter_type
-                result["depolarization.wrap_mode"] = wrap_mode
+            return {
+                "type": "rayleigh_polarized",
+                "depolarization": depolarization_grid,
+            }
 
-            elif isinstance(self.geometry, SphericalShellGeometry):
-                volume_rmin = self.geometry.atmosphere_volume_rmin
-                to_world = self.geometry.atmosphere_volume_to_world
-
-                result["depolarization.type"] = "sphericalcoordsvolume"
-                result["depolarization.volume.type"] = "gridvolume"
-                result["depolarization.volume.grid"] = DictParameter(
-                    lambda ctx: mi.VolumeGrid(
-                        np.reshape(
-                            self.eval_depolarization_factor(ctx.si),
-                            (-1, 1, 1),
-                        ).astype(np.float32),
-                    ),
-                )
-                result["depolarization.volume.filter_type"] = filter_type
-                result["depolarization.volume.wrap_mode"] = wrap_mode
-                result["depolarization.to_world"] = to_world
-                result["depolarization.rmin"] = volume_rmin
-
-            return result
         else:
             return {"type": "rayleigh"}
 
@@ -143,33 +105,17 @@ class RayleighPhaseFunction(PhaseFunction):
         result = {}
 
         if eradiate.mode().is_polarized:
+            depolarization_grid = generate_gridvolume(
+                self.geometry,
+                self.eval_depolarization_factor,
+                flag=KernelSceneParameterFlags.SPECTRAL,
+            )
+
             if self.geometry is None or isinstance(
                 self.geometry, PlaneParallelGeometry
             ):
-                result["depolarization.data"] = SceneParameter(
-                    lambda ctx: np.reshape(
-                        self.eval_depolarization_factor(ctx.si),
-                        (-1, 1, 1, 1),
-                    ).astype(np.float32),
-                    KernelSceneParameterFlags.SPECTRAL,
-                    # search=SearchSceneParameter(
-                    #     node_type=mi.PhaseFunction,
-                    #     node_id=self.phase.id,
-                    #     parameter_relpath=,
-                    # ),
-                )
-
+                result["depolarization.data"] = depolarization_grid
             elif isinstance(self.geometry, SphericalShellGeometry):
-                result["depolarization.volume.data"] = SceneParameter(
-                    lambda ctx: np.reshape(
-                        self.eval_depolarization_factor(ctx.si),
-                        (1, 1, -1, 1),
-                    ).astype(np.float32),
-                    KernelSceneParameterFlags.SPECTRAL,
-                    # search=SearchSceneParameter(
-                    #     node_type=mi.PhaseFunction,
-                    #     node_id=self.phase.id,
-                    #     parameter_relpath=,
-                    # ),
-                )
+                result["depolarization.volume.data"] = depolarization_grid
+
         return result
