@@ -92,7 +92,7 @@ class SceneGeometry(ABC):
             kw_only=True,
         ),
         doc="Volume filter type",
-        default="WrapMode.NEAREST",
+        default="FilterType.NEAREST",
         type=".FilterType",
         init_type=".FilterType",
     )
