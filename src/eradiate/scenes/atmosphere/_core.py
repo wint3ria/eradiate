@@ -30,12 +30,12 @@ from ..._factory import Factory
 from ..._mode import get_mode
 from ...attrs import define, documented, get_doc
 from ...contexts import KernelContext
+from ...grid import GridCoords
 from ...gridvolume import generate_gridvolume
 from ...kernel import (
     KernelSceneParameterFlags,
     SceneParameter,
 )
-from ...radprops import ZGrid
 from ...spectral.index import SpectralIndex
 from ...units import symbol
 from ...units import unit_context_config as ucc
@@ -430,7 +430,7 @@ class AtmosphericMedium(Atmosphere, ABC):
     def eval_radprops(
         self,
         si: SpectralIndex,
-        zgrid: ZGrid | None = None,
+        grid: GridCoords | None = None,
         optional_fields: bool = False,
     ) -> xr.Dataset:
         """
@@ -441,10 +441,10 @@ class AtmosphericMedium(Atmosphere, ABC):
         si : .SpectralIndex
             Spectral index.
 
-        zgrid : .ZGrid, optional
+        grid : .GridCoords, optional
             Altitude grid on which evaluation is performed. If unset, an
             instance-specific default is used
-            (see :meth:`zgrid <.AtmosphericMedium.geometry.zgrid>`).
+            (see :meth:`grid <.AtmosphericMedium.geometry.grid>`).
 
         optional_fields : bool, optional, default: False
             If ``True``, also output the absorption and scattering coefficients,
@@ -464,12 +464,12 @@ class AtmosphericMedium(Atmosphere, ABC):
 
             * ``z``: altitude.
         """
-        if zgrid is None:
-            zgrid = self.geometry.zgrid
+        if grid is None:
+            grid = self.geometry.grid
 
         sigma_units = ucc.get("collision_coefficient")
-        sigma_t = self.eval_sigma_t(si, zgrid).reshape(zgrid.layers.shape)
-        albedo = self.eval_albedo(si, zgrid).m_as(ureg.dimensionless)
+        sigma_t = self.eval_sigma_t(si, grid).reshape(grid.layers.shape)
+        albedo = self.eval_albedo(si, grid).m_as(ureg.dimensionless)
 
         data_vars = {
             "sigma_t": (
@@ -521,9 +521,9 @@ class AtmosphericMedium(Atmosphere, ABC):
             coords={
                 "z_layer": (
                     "z_layer",
-                    zgrid.layers.magnitude,
+                    grid.layers.magnitude,
                     {
-                        "units": f"{symbol(zgrid.layers.units)}",
+                        "units": f"{symbol(grid.layers.units)}",
                         "standard_name": "layer_altitude",
                         "long_name": "layer altitude",
                     },
@@ -533,7 +533,7 @@ class AtmosphericMedium(Atmosphere, ABC):
 
     @abstractmethod
     def eval_albedo(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         """
         Evaluate albedo spectrum based on a spectral context. This method
@@ -545,10 +545,10 @@ class AtmosphericMedium(Atmosphere, ABC):
         si : :class:`.SpectralIndex`
             Spectral index.
 
-        zgrid : .ZGrid, optional
+        grid : .GridCoords, optional
             Altitude grid on which evaluation is performed. If unset, an
             instance-specific default is used
-            (see :meth:`zgrid <.AtmosphericMedium.geometry.zgrid>`).
+            (see :meth:`grid <.AtmosphericMedium.geometry.grid>`).
 
         Returns
         -------
@@ -560,7 +560,7 @@ class AtmosphericMedium(Atmosphere, ABC):
 
     @abstractmethod
     def eval_sigma_t(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         """
         Evaluate extinction coefficient given a spectral context.
@@ -570,10 +570,10 @@ class AtmosphericMedium(Atmosphere, ABC):
         si : :class:`.SpectralIndex`
             Spectral index.
 
-        zgrid : .ZGrid, optional
+        grid : .GridCoords, optional
             Altitude grid on which evaluation is performed. If unset, an
             instance-specific default is used
-            (see :meth:`zgrid <.AtmosphericMedium.geometry.zgrid>`).
+            (see :meth:`grid <.AtmosphericMedium.geometry.grid>`).
 
         Returns
         -------
@@ -584,7 +584,7 @@ class AtmosphericMedium(Atmosphere, ABC):
 
     @abstractmethod
     def eval_sigma_a(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         """
         Evaluate absorption coefficient given a spectral context.
@@ -594,10 +594,10 @@ class AtmosphericMedium(Atmosphere, ABC):
         si : :class:`.SpectralIndex`
             Spectral index.
 
-        zgrid : .ZGrid, optional
+        grid : .GridCoords, optional
             Altitude grid on which evaluation is performed. If unset, an
             instance-specific default is used
-            (see :meth:`zgrid <.AtmosphericMedium.column.zgrid>`).
+            (see :meth:`grid <.AtmosphericMedium.column.grid>`).
 
         Returns
         -------
@@ -608,7 +608,7 @@ class AtmosphericMedium(Atmosphere, ABC):
 
     @abstractmethod
     def eval_sigma_s(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         """
         Evaluate scattering coefficient given a spectral context.
@@ -618,10 +618,10 @@ class AtmosphericMedium(Atmosphere, ABC):
         si : :class:`.SpectralIndex`
             Spectral index.
 
-        zgrid : .ZGrid, optional
+        grid : .GridCoords, optional
             Altitude grid on which evaluation is performed. If unset, an
             instance-specific default is used
-            (see :meth:`zgrid <.AtmosphericMedium.geometry.zgrid>`).
+            (see :meth:`grid <.AtmosphericMedium.geometry.grid>`).
 
         Returns
         -------
@@ -665,7 +665,7 @@ class AtmosphericMedium(Atmosphere, ABC):
                 f"invalid interaction type '{interaction}', "
                 f"supported: {list(eval_sigma.keys())}"
             )
-        dz = np.diff(self.geometry.zgrid.levels)
+        dz = np.diff(self.geometry.grid.levels)
         tau = np.sum(np.multiply(sigma, dz).to("1"), axis=-1)
         return np.exp(-tau)
 

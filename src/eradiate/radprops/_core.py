@@ -7,15 +7,13 @@ from functools import singledispatchmethod
 import attrs
 import numpy as np
 import pint
-import pinttrs
 import xarray as xr
-from pinttrs.util import ensure_units
+import xarray as xr
 
 import eradiate
 
-from ..attrs import documented, frozen
+from ..grid import GridCoords
 from ..spectral.index import CKDSpectralIndex, MonoSpectralIndex, SpectralIndex
-from ..units import unit_context_config as ucc
 from ..units import unit_registry as ureg
 
 
@@ -162,113 +160,6 @@ def make_dataset(
     )
 
 
-@frozen(eq=False, init=False)
-class ZGrid:
-    """
-    A container for a regular altitude grid.
-
-    Notes
-    -----
-    * Instances are immutable.
-    * Instances are hashable by ID. This is required to allow for using them as
-      an argument of an LRU-cached function.
-    * This class is used as the argument of the ``eval()`` family of methods.
-    """
-
-    levels: pint.Quantity = documented(
-        pinttrs.field(
-            units=ucc.deferred("length"),
-            on_setattr=None,  # frozen instance: on_setattr must be disabled
-        ),
-        type="pint.Quantity",
-        init_type="quantity or array-like",
-        doc="Grid node altitudes.\n\nUnit-enabled field (default: ``ucc['length']``).",
-    )
-
-    _layers: pint.Quantity = pinttrs.field(
-        units=ucc.deferred("length"),
-        on_setattr=None,  # frozen instance: on_setattr must be disabled
-    )
-
-    _layer_height: pint.Quantity = pinttrs.field(
-        units=ucc.deferred("length"),
-        on_setattr=None,  # frozen instance: on_setattr must be disabled
-    )
-
-    @_layer_height.validator
-    def _layer_height_validator(self, attribute, value):
-        if not np.isscalar(value.magnitude):
-            raise ValueError("layer height must be a scalar")
-
-    _total_height: pint.Quantity = pinttrs.field(
-        units=ucc.deferred("length"),
-        on_setattr=None,  # frozen instance: on_setattr must be disabled
-    )
-
-    def __init__(self, levels: np.typing.ArrayLike):
-        levels = ensure_units(levels, default_units=ucc.get("length"))
-        layer_height = np.diff(levels)
-        if not np.allclose(layer_height, layer_height[0]):
-            raise ValueError("levels must be regularly spaced")
-        layers = levels[:-1] + 0.5 * layer_height
-        self.__attrs_init__(
-            levels=levels,
-            layers=layers,
-            layer_height=layer_height[0],
-            total_height=(levels.m[-1] - levels.m[0]) * levels.u,
-        )
-
-    @property
-    def layers(self) -> pint.Quantity:
-        """
-        Returns
-        -------
-        quantity
-            Vector of altitudes of layer centres.
-        """
-        return self._layers
-
-    @property
-    def layer_height(self) -> pint.Quantity:
-        """
-        Returns
-        -------
-        quantity
-            Layer height.
-        """
-        return self._layer_height
-
-    @property
-    def n_levels(self) -> int:
-        """
-        Returns
-        -------
-        int
-            Number of levels.
-        """
-        return len(self.levels)
-
-    @property
-    def n_layers(self) -> int:
-        """
-        Returns
-        -------
-        int
-            Number of layers.
-        """
-        return len(self.layers)
-
-    @property
-    def total_height(self) -> pint.Quantity:
-        """
-        Returns
-        -------
-        quantity
-            Total height covered by the altitude grid.
-        """
-        return self._total_height
-
-
 @attrs.define(eq=False)
 class RadProfile(ABC):
     """
@@ -287,7 +178,7 @@ class RadProfile(ABC):
 
     @property
     @abstractmethod
-    def zgrid(self) -> ZGrid:
+    def grid(self) -> GridCoords:
         """
         Default altitude grid used for profile evaluation.
         """
@@ -297,7 +188,7 @@ class RadProfile(ABC):
     def eval_albedo(
         self,
         si: SpectralIndex,
-        zgrid: ZGrid | None = None,
+        grid: GridCoords | None = None,
     ) -> pint.Quantity:
         """
         Evaluate albedo at given spectral index.
@@ -307,7 +198,7 @@ class RadProfile(ABC):
         si : :class:`.SpectralIndex`
             Spectral index.
 
-        zgrid : .ZGrid, optional
+        grid : .GridCoords, optional
             The altitude grid for which the albedo is evaluated. If unset, a
             profile-specific default is used.
 
@@ -320,21 +211,21 @@ class RadProfile(ABC):
         raise NotImplementedError
 
     @eval_albedo.register(MonoSpectralIndex)
-    def _(self, si, zgrid: ZGrid) -> pint.Quantity:
-        return self.eval_albedo_mono(w=si.w, zgrid=zgrid).squeeze()
+    def _(self, si, grid: GridCoords) -> pint.Quantity:
+        return self.eval_albedo_mono(w=si.w, grid=grid).squeeze()
 
     @eval_albedo.register(CKDSpectralIndex)
-    def _(self, si, zgrid: ZGrid) -> pint.Quantity:
-        return self.eval_albedo_ckd(w=si.w, g=si.g, zgrid=zgrid).squeeze()
+    def _(self, si, grid: GridCoords) -> pint.Quantity:
+        return self.eval_albedo_ckd(w=si.w, g=si.g, grid=grid).squeeze()
 
-    def eval_albedo_mono(self, w: pint.Quantity, zgrid: ZGrid) -> pint.Quantity:
+    def eval_albedo_mono(self, w: pint.Quantity, grid: GridCoords) -> pint.Quantity:
         raise NotImplementedError
 
     def eval_albedo_ckd(
         self,
         w: pint.Quantity,
         g: float,
-        zgrid: ZGrid,
+        grid: GridCoords,
     ) -> pint.Quantity:
         raise NotImplementedError
 
@@ -342,7 +233,7 @@ class RadProfile(ABC):
     def eval_sigma_t(
         self,
         si: SpectralIndex,
-        zgrid: ZGrid | None = None,
+        grid: GridCoords | None = None,
     ) -> pint.Quantity:
         """
         Evaluate extinction coefficient at given spectral index.
@@ -352,7 +243,7 @@ class RadProfile(ABC):
         si : :class:`.SpectralIndex`
             Spectral index.
 
-        zgrid : .ZGrid, optional
+        grid : .GridCoords, optional
             The altitude grid for which the extinction coefficient is evaluated.
             If unset, a profile-specific default is used.
 
@@ -365,21 +256,21 @@ class RadProfile(ABC):
         raise NotImplementedError
 
     @eval_sigma_t.register(MonoSpectralIndex)
-    def _(self, si, zgrid: ZGrid) -> pint.Quantity:
-        return self.eval_sigma_t_mono(w=si.w, zgrid=zgrid).squeeze()
+    def _(self, si, grid: GridCoords) -> pint.Quantity:
+        return self.eval_sigma_t_mono(w=si.w, grid=grid).squeeze()
 
     @eval_sigma_t.register(CKDSpectralIndex)
-    def _(self, si, zgrid: ZGrid) -> pint.Quantity:
-        return self.eval_sigma_t_ckd(w=si.w, g=si.g, zgrid=zgrid).squeeze()
+    def _(self, si, grid: GridCoords) -> pint.Quantity:
+        return self.eval_sigma_t_ckd(w=si.w, g=si.g, grid=grid).squeeze()
 
-    def eval_sigma_t_mono(self, w: pint.Quantity, zgrid: ZGrid) -> pint.Quantity:
+    def eval_sigma_t_mono(self, w: pint.Quantity, grid: GridCoords) -> pint.Quantity:
         raise NotImplementedError
 
     def eval_sigma_t_ckd(
         self,
         w: pint.Quantity,
         g: float,
-        zgrid: ZGrid,
+        grid: GridCoords,
     ) -> pint.Quantity:
         raise NotImplementedError
 
@@ -387,7 +278,7 @@ class RadProfile(ABC):
     def eval_sigma_a(
         self,
         si: SpectralIndex,
-        zgrid: ZGrid | None = None,
+        grid: GridCoords | None = None,
     ) -> pint.Quantity:
         """
         Evaluate absorption coefficient at given spectral index.
@@ -397,7 +288,7 @@ class RadProfile(ABC):
         si : .SpectralIndex
             Spectral index.
 
-        zgrid : .ZGrid, optional
+        grid : .GridCoords, optional
             The altitude grid for which the absorption coefficient is evaluated.
             If unset, a profile-specific default is used.
 
@@ -410,17 +301,17 @@ class RadProfile(ABC):
         raise NotImplementedError
 
     @eval_sigma_a.register(MonoSpectralIndex)
-    def _(self, si, zgrid: ZGrid) -> pint.Quantity:
-        return self.eval_sigma_a_mono(w=si.w, zgrid=zgrid).squeeze()
+    def _(self, si, grid: GridCoords) -> pint.Quantity:
+        return self.eval_sigma_a_mono(w=si.w, grid=grid).squeeze()
 
     @eval_sigma_a.register(CKDSpectralIndex)
-    def _(self, si, zgrid: ZGrid) -> pint.Quantity:
-        return self.eval_sigma_a_ckd(w=si.w, g=si.g, zgrid=zgrid).squeeze()
+    def _(self, si, grid: GridCoords) -> pint.Quantity:
+        return self.eval_sigma_a_ckd(w=si.w, g=si.g, grid=grid).squeeze()
 
     def eval_sigma_a_mono(
         self,
         w: pint.Quantity,
-        zgrid: ZGrid,
+        grid: GridCoords,
     ) -> pint.Quantity:
         """
         Evaluate absorption coefficient spectrum in monochromatic mode.
@@ -431,7 +322,7 @@ class RadProfile(ABC):
         self,
         w: pint.Quantity,
         g: float,
-        zgrid: ZGrid,
+        grid: GridCoords,
     ) -> pint.Quantity:
         """
         Evaluate absorption coefficient spectrum in CKD modes.
@@ -442,7 +333,7 @@ class RadProfile(ABC):
     def eval_sigma_s(
         self,
         si: SpectralIndex,
-        zgrid: ZGrid | None = None,
+        grid: GridCoords | None = None,
     ) -> pint.Quantity:
         """
         Evaluate scattering coefficient at given spectral index.
@@ -452,7 +343,7 @@ class RadProfile(ABC):
         si : .SpectralIndex
             Spectral index.
 
-        zgrid : .ZGrid, optional
+        grid : .GridCoords, optional
             The altitude grid for which the scattering coefficient is evaluated.
             If unset, a profile-specific default is used.
 
@@ -465,18 +356,18 @@ class RadProfile(ABC):
         raise NotImplementedError
 
     @eval_sigma_s.register(MonoSpectralIndex)
-    def _(self, si, zgrid: ZGrid) -> pint.Quantity:
-        return self.eval_sigma_s_mono(w=si.w, zgrid=zgrid).squeeze()
+    def _(self, si, grid: GridCoords) -> pint.Quantity:
+        return self.eval_sigma_s_mono(w=si.w, grid=grid).squeeze()
 
     @eval_sigma_s.register(CKDSpectralIndex)
-    def _(self, si, zgrid: ZGrid) -> pint.Quantity:
-        return self.eval_sigma_s_ckd(w=si.w, g=si.g, zgrid=zgrid).squeeze()
+    def _(self, si, grid: GridCoords) -> pint.Quantity:
+        return self.eval_sigma_s_ckd(w=si.w, g=si.g, grid=grid).squeeze()
 
-    def eval_sigma_s_mono(self, w: pint.Quantity, zgrid: ZGrid) -> pint.Quantity:
+    def eval_sigma_s_mono(self, w: pint.Quantity, grid: GridCoords) -> pint.Quantity:
         raise NotImplementedError
 
     def eval_sigma_s_ckd(
-        self, w: pint.Quantity, g: float, zgrid: ZGrid
+        self, w: pint.Quantity, g: float, grid: GridCoords
     ) -> pint.Quantity:
         raise NotImplementedError
 
@@ -484,7 +375,7 @@ class RadProfile(ABC):
     def eval_depolarization_factor(
         self,
         si: SpectralIndex,
-        zgrid: ZGrid | None = None,
+        grid: GridCoords | None = None,
     ) -> pint.Quantity:
         """
         Evaluate depolarization factor at given spectral index.
@@ -494,7 +385,7 @@ class RadProfile(ABC):
         si : .SpectralIndex
             Spectral index.
 
-        zgrid : .ZGrid, optional
+        grid : .GridCoords, optional
             The altitude grid for which the depolarization factor is evaluated.
             If unset, a profile-specific default is used.
 
@@ -508,20 +399,20 @@ class RadProfile(ABC):
         raise NotImplementedError
 
     @eval_depolarization_factor.register(MonoSpectralIndex)
-    def _(self, si, zgrid: ZGrid) -> pint.Quantity:
-        return self.eval_depolarization_factor_mono(w=si.w, zgrid=zgrid)
+    def _(self, si, grid: GridCoords) -> pint.Quantity:
+        return self.eval_depolarization_factor_mono(w=si.w, grid=grid)
 
     @eval_depolarization_factor.register(CKDSpectralIndex)
-    def _(self, si, zgrid: ZGrid) -> pint.Quantity:
-        return self.eval_depolarization_factor_ckd(w=si.w, g=si.g, zgrid=zgrid)
+    def _(self, si, grid: GridCoords) -> pint.Quantity:
+        return self.eval_depolarization_factor_ckd(w=si.w, g=si.g, grid=grid)
 
     def eval_depolarization_factor_mono(
-        self, w: pint.Quantity, zgrid: ZGrid
+        self, w: pint.Quantity, grid: GridCoords
     ) -> pint.Quantity:
         raise NotImplementedError
 
     def eval_depolarization_factor_ckd(
-        self, w: pint.Quantity, g: float, zgrid: ZGrid
+        self, w: pint.Quantity, g: float, grid: GridCoords
     ) -> pint.Quantity:
         raise NotImplementedError
 
@@ -529,7 +420,7 @@ class RadProfile(ABC):
     def eval_dataset(
         self,
         si: SpectralIndex,
-        zgrid: ZGrid | None = None,
+        grid: GridCoords | None = None,
     ) -> xr.Dataset:
         """
         Evaluate radiative properties at given spectral index.
@@ -539,7 +430,7 @@ class RadProfile(ABC):
         si : :class:`.SpectralIndex`
             Spectral index.
 
-        zgrid : .ZGrid, optional
+        grid : .GridCoords, optional
             The altitude grid for which the radiative profile is evaluated.
             If unset, a profile-specific default is used.
 
@@ -551,20 +442,20 @@ class RadProfile(ABC):
         raise NotImplementedError
 
     @eval_dataset.register(MonoSpectralIndex)
-    def _(self, si, zgrid: ZGrid) -> xr.Dataset:
-        return self.eval_dataset_mono(w=si.w, zgrid=zgrid)
+    def _(self, si, grid: GridCoords) -> xr.Dataset:
+        return self.eval_dataset_mono(w=si.w, grid=grid)
 
     @eval_dataset.register(CKDSpectralIndex)
-    def _(self, si, zgrid: ZGrid) -> xr.Dataset:
-        return self.eval_dataset_ckd(w=si.w, g=si.g, zgrid=zgrid)
+    def _(self, si, grid: GridCoords) -> xr.Dataset:
+        return self.eval_dataset_ckd(w=si.w, g=si.g, grid=grid)
 
-    def eval_dataset_mono(self, w: pint.Quantity, zgrid: ZGrid) -> xr.Dataset:
+    def eval_dataset_mono(self, w: pint.Quantity, grid: GridCoords) -> xr.Dataset:
         raise NotImplementedError
 
     def eval_dataset_ckd(
         self,
         w: pint.Quantity,
         g: float,
-        zgrid: ZGrid,
+        grid: GridCoords,
     ) -> xr.Dataset:
         raise NotImplementedError

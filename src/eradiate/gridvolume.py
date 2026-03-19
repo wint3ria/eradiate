@@ -88,7 +88,7 @@ def make_volume_grid(
     if geometry is not None:
         shape = (
             *(geometry.xy_resolution if isinstance(geometry, XYGrid) else (1, 1)),
-            geometry.zgrid.n_layers,
+            geometry.grid.n_layers,
         )
     grid = _prepare_grid(
         eval_grid,

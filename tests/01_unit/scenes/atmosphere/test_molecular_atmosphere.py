@@ -174,4 +174,4 @@ def test_molecular_atmosphere_depolarization(mode_ckd):
     template, _ = traverse(atmosphere)
     assert template.render(KernelContext(si=si))
     assert isinstance(depol, pint.Quantity)
-    assert len(depol) == atmosphere.geometry.zgrid.n_layers
+    assert len(depol) == atmosphere.geometry.grid.n_layers

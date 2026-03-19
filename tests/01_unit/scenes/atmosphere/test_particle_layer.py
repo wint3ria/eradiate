@@ -4,7 +4,7 @@ import xarray as xr
 
 from eradiate import KernelContext, fresolver
 from eradiate import unit_registry as ureg
-from eradiate.radprops import ZGrid
+from eradiate.grid import GridCoords
 from eradiate.scenes.atmosphere import ParticleLayer, UniformParticleDistribution
 from eradiate.scenes.core import traverse
 from eradiate.spectral.index import SpectralIndex
@@ -285,7 +285,7 @@ def test_particle_layer_eval_radprops(mode_mono, test_dataset_path, tau_ref):
     # and check it matches the input tau_ref
     si = SpectralIndex.new(w=layer.w_ref)
     radprops = layer.eval_radprops(si)
-    delta_z = layer.geometry.zgrid.layer_height
+    delta_z = layer.geometry.grid.layer_height
 
     with xr.set_options(keep_attrs=True):
         tau = to_quantity(radprops.sigma_t.sum()) * delta_z
@@ -323,13 +323,13 @@ def test_particle_layer_eval_sigma_t_impl(
     n_wavelengths = 3
     n_layers = 10
     wavelengths = np.linspace(500.0, 1500.0, n_wavelengths) * ureg.nm
-    zgrid = ZGrid(np.linspace(0, 5, n_layers + 1) * ureg.km)
+    grid = GridCoords(np.linspace(0, 5, n_layers + 1) * ureg.km)
 
     layer = ParticleLayer(
         geometry={
             "type": "plane_parallel",
-            "toa_altitude": zgrid.levels[-1],
-            "zgrid": zgrid,
+            "toa_altitude": grid.levels[-1],
+            "grid": grid,
         },
         dataset=ds,
         bottom=bottom,
@@ -341,11 +341,11 @@ def test_particle_layer_eval_sigma_t_impl(
 
     # Compute layer optical thickness at current wavelengths based on sigma_t
     # evaluation routine
-    sigma_t = np.squeeze(layer._eval_sigma_t_impl(wavelengths, layer.geometry.zgrid))
+    sigma_t = np.squeeze(layer._eval_sigma_t_impl(wavelengths, layer.geometry.grid))
     assert sigma_t.units.is_compatible_with(ureg("m**-1"))
     assert sigma_t.shape == (n_wavelengths, n_layers)
     # -- Integrate sigma_t * dz vs space coordinate using rectangle method
-    tau = np.sum(sigma_t * layer.geometry.zgrid.layer_height, axis=-1)
+    tau = np.sum(sigma_t * layer.geometry.grid.layer_height, axis=-1)
 
     # Manually compute extinction at running and reference wavelengths
     w_units = ureg(ds["w"].attrs["units"])
@@ -417,23 +417,23 @@ def test_particle_layer_switches(mode_mono, has_absorption, has_scattering, expe
             has_absorption=has_absorption,
             has_scattering=has_scattering,
         )
-        zgrid = particle_layer.geometry.zgrid
+        grid = particle_layer.geometry.grid
         w = 550.0 * ureg.nm
 
         np.testing.assert_allclose(
-            particle_layer.eval_albedo_mono(w, zgrid).m_as(ureg.dimensionless),
+            particle_layer.eval_albedo_mono(w, grid).m_as(ureg.dimensionless),
             expected["albedo"],
         )
         np.testing.assert_allclose(
-            particle_layer.eval_sigma_t_mono(w, zgrid).m_as("km^-1"),
+            particle_layer.eval_sigma_t_mono(w, grid).m_as("km^-1"),
             expected["sigma_t"],
         )
         np.testing.assert_allclose(
-            particle_layer.eval_sigma_a_mono(w, zgrid).m_as("km^-1"),
+            particle_layer.eval_sigma_a_mono(w, grid).m_as("km^-1"),
             expected["sigma_a"],
         )
         np.testing.assert_allclose(
-            particle_layer.eval_sigma_s_mono(w, zgrid).m_as("km^-1"),
+            particle_layer.eval_sigma_s_mono(w, grid).m_as("km^-1"),
             expected["sigma_s"],
         )
 

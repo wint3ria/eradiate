@@ -14,22 +14,15 @@ from axsdb import AbsorptionDatabase, ErrorHandlingConfiguration
 from ._core import AtmosphericMedium
 from ..core import traverse
 from ..phase import PhaseFunction, RayleighPhaseFunction, phase_function_factory
-from ... import converters
 from ...attrs import define, documented
 from ...contexts import KernelContext
-from ...radprops import AtmosphereRadProfile, RadProfile, ZGrid, get_default_absdb
+from ...radprops import AtmosphereRadProfile, RadProfile, get_default_absdb
+from ...converters import convert_thermoprops, convert_absdb
+from ...exceptions import UnsupportedModeError
+from ...grid import GridCoords
 from ...spectral.index import SpectralIndex
 from ...units import unit_registry as ureg
 from ...util.misc import summary_repr
-
-
-def _default_absorption_data():
-    if eradiate.mode().is_mono:
-        return "komodo"
-    elif eradiate.mode().is_ckd:
-        return "monotropa"
-    else:
-        raise UnsupportedModeError(unsupported=["mono", "ckd"])
 
 
 @define(eq=False, slots=False)
@@ -37,8 +30,8 @@ class AbstractMolecularAtmosphere(AtmosphericMedium):
     _absorption_data: AbsorptionDatabase = documented(
         attrs.field(
             kw_only=True,
-            factory=AbsorptionDatabase.default,
-            converter=AbsorptionDatabase.convert,
+            factory=get_default_absdb,
+            converter=convert_absdb,
             validator=attrs.validators.instance_of(AbsorptionDatabase),
         ),
         doc="Absorption coefficient data. The passed value is pre-processed by "
@@ -275,47 +268,47 @@ class MolecularAtmosphere(AbstractMolecularAtmosphere):
         return self._radprops_profile
 
     def eval_albedo(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         # Inherit docstring
         return self.radprops_profile.eval_albedo(
             si,
-            zgrid=self.geometry.zgrid if zgrid is None else zgrid,
+            grid=self.geometry.grid if grid is None else grid,
         )
 
     def eval_sigma_t(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         # Inherit docstring
         return self.radprops_profile.eval_sigma_t(
             si,
-            zgrid=self.geometry.zgrid if zgrid is None else zgrid,
+            grid=self.geometry.grid if grid is None else grid,
         )
 
     def eval_sigma_a(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None, **kwargs
+        self, si: SpectralIndex, grid: GridCoords | None = None, **kwargs
     ) -> pint.Quantity:
         # Inherit docstring
         return self.radprops_profile.eval_sigma_a(
             si,
-            zgrid=self.geometry.zgrid if zgrid is None else zgrid,
+            grid=self.geometry.grid if grid is None else grid,
         )
 
     def eval_sigma_s(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         # Inherit docstring
         return self.radprops_profile.eval_sigma_s(
             si,
-            zgrid=self.geometry.zgrid if zgrid is None else zgrid,
+            grid=self.geometry.grid if grid is None else grid,
         )
 
     def eval_depolarization_factor(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         return self.radprops_profile.eval_depolarization_factor(
             si,
-            zgrid=self.geometry.zgrid if zgrid is None else zgrid,
+            grid=self.geometry.grid if grid is None else grid,
         )
 
 
@@ -399,41 +392,39 @@ class GriddedMolecularAtmosphere(AbstractMolecularAtmosphere):
         )
 
     def apply_radprops_profiles(
-        self, si: SpectralIndex, zgrid: Zgrid | None, eval_method
+        self, si: SpectralIndex, grid: grid | None, eval_method
     ) -> list[pint.Quantity]:
-        zgrid = zgrid or self.geometry.zgrid
+        grid = grid or self.geometry.grid
         properties = [
-            eval_method(radprops_profile, si, zgrid)
+            eval_method(radprops_profile, si, grid)
             for radprops_profile in self._radprops_profile_grid
         ]
-        return np.stack(properties).reshape(
-            *self.geometry.xy_resolution, zgrid.n_layers
-        )
+        return np.stack(properties).reshape(*self.geometry.xy_resolution, grid.n_layers)
 
     def eval_albedo(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         return self.apply_radprops_profiles(
-            si, zgrid, lambda rp, idx, grid: rp.eval_albedo(idx, grid)
+            si, grid, lambda rp, idx, grid: rp.eval_albedo(idx, grid)
         )
 
     def eval_sigma_t(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         return self.apply_radprops_profiles(
-            si, zgrid, lambda rp, idx, grid: rp.eval_sigma_t(idx, grid)
+            si, grid, lambda rp, idx, grid: rp.eval_sigma_t(idx, grid)
         )
 
     def eval_sigma_a(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         return self.apply_radprops_profiles(
-            si, zgrid, lambda rp, idx, grid: rp.sigma_a(idx, grid)
+            si, grid, lambda rp, idx, grid: rp.sigma_a(idx, grid)
         )
 
     def eval_sigma_s(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         return self.apply_radprops_profiles(
-            si, zgrid, lambda rp, idx, grid: rp.eval_sigma_s(idx, grid)
+            si, grid, lambda rp, idx, grid: rp.eval_sigma_s(idx, grid)
         )
