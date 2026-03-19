@@ -13,8 +13,8 @@ import pinttr
 from .shapes import CuboidShape, RectangleShape, Shape, SphereShape
 from ..attrs import define, documented
 from ..constants import EARTH_RADIUS
+from ..grid import GridCoords
 from ..kernel import map_cube, map_unit_cube
-from ..radprops import ZGrid
 from ..units import unit_context_config as ucc
 from ..units import unit_context_kernel as uck
 from ..units import unit_registry as ureg
@@ -44,7 +44,7 @@ class SceneGeometry(ABC):
 
     Warnings
     --------
-    If a ``zgrid`` value is passed to the constructor (instead of letting
+    If a ``grid`` value is passed to the constructor (instead of letting
     the constructor set it automatically), its extent must be
     [``ground_altitude``, ``toa_altitude``]. The constructor will raise
     a :class:`ValueError` otherwise.
@@ -68,20 +68,22 @@ class SceneGeometry(ABC):
         init_type="float or quantity",
     )
 
-    zgrid: ZGrid = documented(
+    grid: GridCoords = documented(
         attrs.field(
             default=None,
             converter=attrs.converters.optional(
-                lambda x: ZGrid(x) if not isinstance(x, ZGrid) else x
+                lambda x: GridCoords(x) if not isinstance(x, GridCoords) else x
             ),
-            validator=attrs.validators.optional(attrs.validators.instance_of(ZGrid)),
+            validator=attrs.validators.optional(
+                attrs.validators.instance_of(GridCoords)
+            ),
         ),
         doc="The altitude mesh on which the radiative properties of "
         "heterogeneous atmosphere components are evaluated. "
         "If unset, a default grid with one layer per 100 m (or 10 layers if "
         "the atmosphere object height is less than 100 m) is used.",
-        type=".ZGrid",
-        init_type=".ZGrid, quantity or ndarray, optional",
+        type=".GridCoords",
+        init_type=".GridCoords, quantity or ndarray, optional",
     )
 
     filter_type: FilterType = documented(
@@ -112,11 +114,11 @@ class SceneGeometry(ABC):
 
     def __attrs_post_init__(self) -> None:
         # Set altitude grid
-        if self.zgrid is None:
+        if self.grid is None:
             bottom = self.ground_altitude.m_as(ureg.m)
             top = self.toa_altitude.m_as(ureg.m)
             step = min(100.0, (top - bottom) / 10.0)
-            self.zgrid = ZGrid(
+            self.grid = GridCoords(
                 ureg.convert(
                     np.arange(bottom, top + step * 0.1, step),
                     ureg.m,
@@ -125,17 +127,17 @@ class SceneGeometry(ABC):
             )
 
         else:
-            grid_bottom = self.zgrid.levels[0]
+            grid_bottom = self.grid.levels[0]
             if not np.isclose(grid_bottom, self.ground_altitude):
                 raise ValueError(
-                    "zgrid bottom must match ground_altitude; "
+                    "grid bottom must match ground_altitude; "
                     f"expected {self.ground_altitude}, got {grid_bottom}"
                 )
 
-            grid_top = self.zgrid.levels[-1]
+            grid_top = self.grid.levels[-1]
             if not np.isclose(grid_top, self.toa_altitude):
                 raise ValueError(
-                    "zgrid top must match toa_altitude; "
+                    "grid top must match toa_altitude; "
                     f"expected {self.toa_altitude}, got {grid_top}"
                 )
 

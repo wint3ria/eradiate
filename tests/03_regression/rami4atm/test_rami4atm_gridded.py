@@ -47,7 +47,7 @@ def test_rami4atm_gridded(mode_ckd_double, case, artefact_dir):
         mol_atm_1d = exp.atmosphere.molecular_atmosphere
 
         geometry = GriddedParallelGeometry(
-            zgrid=exp.geometry.zgrid,
+            grid=exp.geometry.grid,
             xy_resolution=resolution,
         )
 

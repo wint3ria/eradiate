@@ -5,6 +5,7 @@ from . import converters as converters
 from . import data as data
 from . import experiments as experiments
 from . import frame as frame
+from . import grid as grid
 from . import gridvolume as gridvolume
 from . import kernel as kernel
 from . import notebook as notebook

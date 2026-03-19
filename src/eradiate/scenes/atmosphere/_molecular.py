@@ -19,12 +19,12 @@ from ...attrs import define, documented
 from ...contexts import KernelContext
 from ...converters import convert_thermoprops
 from ...exceptions import UnsupportedModeError
+from ...grid import GridCoords
 from ...radprops import (
     AbsorptionDatabase,
     AtmosphereRadProfile,
     ErrorHandlingConfiguration,
     RadProfile,
-    ZGrid,
 )
 from ...spectral.index import SpectralIndex
 from ...units import unit_registry as ureg
@@ -262,47 +262,47 @@ class MolecularAtmosphere(AbstractMolecularAtmosphere):
         return self._radprops_profile
 
     def eval_albedo(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         # Inherit docstring
         return self.radprops_profile.eval_albedo(
             si,
-            zgrid=self.geometry.zgrid if zgrid is None else zgrid,
+            grid=self.geometry.grid if grid is None else grid,
         )
 
     def eval_sigma_t(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         # Inherit docstring
         return self.radprops_profile.eval_sigma_t(
             si,
-            zgrid=self.geometry.zgrid if zgrid is None else zgrid,
+            grid=self.geometry.grid if grid is None else grid,
         )
 
     def eval_sigma_a(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None, **kwargs
+        self, si: SpectralIndex, grid: GridCoords | None = None, **kwargs
     ) -> pint.Quantity:
         # Inherit docstring
         return self.radprops_profile.eval_sigma_a(
             si,
-            zgrid=self.geometry.zgrid if zgrid is None else zgrid,
+            grid=self.geometry.grid if grid is None else grid,
         )
 
     def eval_sigma_s(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         # Inherit docstring
         return self.radprops_profile.eval_sigma_s(
             si,
-            zgrid=self.geometry.zgrid if zgrid is None else zgrid,
+            grid=self.geometry.grid if grid is None else grid,
         )
 
     def eval_depolarization_factor(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         return self.radprops_profile.eval_depolarization_factor(
             si,
-            zgrid=self.geometry.zgrid if zgrid is None else zgrid,
+            grid=self.geometry.grid if grid is None else grid,
         )
 
 
@@ -386,41 +386,39 @@ class GriddedMolecularAtmosphere(AbstractMolecularAtmosphere):
         )
 
     def apply_radprops_profiles(
-        self, si: SpectralIndex, zgrid: Zgrid | None, eval_method
+        self, si: SpectralIndex, grid: grid | None, eval_method
     ) -> list[pint.Quantity]:
-        zgrid = zgrid or self.geometry.zgrid
+        grid = grid or self.geometry.grid
         properties = [
-            eval_method(radprops_profile, si, zgrid)
+            eval_method(radprops_profile, si, grid)
             for radprops_profile in self._radprops_profile_grid
         ]
-        return np.stack(properties).reshape(
-            *self.geometry.xy_resolution, zgrid.n_layers
-        )
+        return np.stack(properties).reshape(*self.geometry.xy_resolution, grid.n_layers)
 
     def eval_albedo(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         return self.apply_radprops_profiles(
-            si, zgrid, lambda rp, idx, grid: rp.eval_albedo(idx, grid)
+            si, grid, lambda rp, idx, grid: rp.eval_albedo(idx, grid)
         )
 
     def eval_sigma_t(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         return self.apply_radprops_profiles(
-            si, zgrid, lambda rp, idx, grid: rp.eval_sigma_t(idx, grid)
+            si, grid, lambda rp, idx, grid: rp.eval_sigma_t(idx, grid)
         )
 
     def eval_sigma_a(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         return self.apply_radprops_profiles(
-            si, zgrid, lambda rp, idx, grid: rp.sigma_a(idx, grid)
+            si, grid, lambda rp, idx, grid: rp.sigma_a(idx, grid)
         )
 
     def eval_sigma_s(
-        self, si: SpectralIndex, zgrid: ZGrid | None = None
+        self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
         return self.apply_radprops_profiles(
-            si, zgrid, lambda rp, idx, grid: rp.eval_sigma_s(idx, grid)
+            si, grid, lambda rp, idx, grid: rp.eval_sigma_s(idx, grid)
         )

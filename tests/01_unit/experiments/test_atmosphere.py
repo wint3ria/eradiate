@@ -253,12 +253,12 @@ def test_atmosphere_experiment_custom_atmosphere(mode_ckd, atmosphere_cams_lybia
     Test that the AtmosphereExperiment can deal with a custom atmosphere (CAMS).
     """
     # Create a geometry compatible with the molecular atmosphere
-    zgrid = to_quantity(atmosphere_cams_lybia4_ckd["thermoprops"].z)
+    grid = to_quantity(atmosphere_cams_lybia4_ckd["thermoprops"].z)
     geometry = {
         "type": "spherical_shell",
-        "zgrid": zgrid,
-        "toa_altitude": zgrid[-1],
-        "ground_altitude": zgrid[0],
+        "grid": grid,
+        "toa_altitude": grid[-1],
+        "ground_altitude": grid[0],
     }
 
     # Create simple scene
