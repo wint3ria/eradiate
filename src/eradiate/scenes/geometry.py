@@ -13,7 +13,7 @@ import pinttr
 from .shapes import CuboidShape, RectangleShape, Shape, SphereShape
 from ..attrs import define, documented
 from ..constants import EARTH_RADIUS
-from ..grid import GridCoords
+from ..grid import GridCoords, SphericalShellGridCoords
 from ..kernel import map_cube, map_unit_cube
 from ..units import unit_context_config as ucc
 from ..units import unit_context_kernel as uck
@@ -72,7 +72,7 @@ class SceneGeometry(ABC):
         attrs.field(
             default=None,
             converter=attrs.converters.optional(
-                lambda x: GridCoords(x) if not isinstance(x, GridCoords) else x
+                lambda x: GridCoords.convert(x) if not isinstance(x, GridCoords) else x
             ),
             validator=attrs.validators.optional(
                 attrs.validators.instance_of(GridCoords)
@@ -114,32 +114,19 @@ class SceneGeometry(ABC):
 
     def __attrs_post_init__(self) -> None:
         # Set altitude grid
-        if self.grid is None:
-            bottom = self.ground_altitude.m_as(ureg.m)
-            top = self.toa_altitude.m_as(ureg.m)
-            step = min(100.0, (top - bottom) / 10.0)
-            self.grid = GridCoords(
-                ureg.convert(
-                    np.arange(bottom, top + step * 0.1, step),
-                    ureg.m,
-                    ucc.get("length"),
-                )
+        grid_bottom = self.grid.levels[0]
+        if not np.isclose(grid_bottom, self.ground_altitude):
+            raise ValueError(
+                "grid bottom must match ground_altitude; "
+                f"expected {self.ground_altitude}, got {grid_bottom}"
             )
 
-        else:
-            grid_bottom = self.grid.levels[0]
-            if not np.isclose(grid_bottom, self.ground_altitude):
-                raise ValueError(
-                    "grid bottom must match ground_altitude; "
-                    f"expected {self.ground_altitude}, got {grid_bottom}"
-                )
-
-            grid_top = self.grid.levels[-1]
-            if not np.isclose(grid_top, self.toa_altitude):
-                raise ValueError(
-                    "grid top must match toa_altitude; "
-                    f"expected {self.toa_altitude}, got {grid_top}"
-                )
+        grid_top = self.grid.levels[-1]
+        if not np.isclose(grid_top, self.toa_altitude):
+            raise ValueError(
+                "grid top must match toa_altitude; "
+                f"expected {self.toa_altitude}, got {grid_top}"
+            )
 
     @classmethod
     def convert(cls, value: t.Any) -> t.Any:
@@ -258,6 +245,16 @@ class PlaneParallelGeometry(SceneGeometry):
     def surface_shape(self) -> RectangleShape:
         return RectangleShape.surface(altitude=self.ground_altitude, width=self.width)
 
+    def __attrs_post_init__(self) -> None:
+        if self.grid is None:
+            bottom = self.ground_altitude
+            top = self.toa_altitude
+            step = min(100.0 * ureg.m, (top - bottom) / 10.0)
+
+            self.grid = GridCoords.make_onedim_arange(top, bottom, step, self.width)
+
+        super().__attrs_post_init__()
+
 
 @define
 class SphericalShellGeometry(SceneGeometry):
@@ -309,6 +306,23 @@ class SphericalShellGeometry(SceneGeometry):
         return SphereShape.surface(
             altitude=self.ground_altitude, planet_radius=self.planet_radius
         )
+
+    def __attrs_post_init__(self) -> None:
+        if self.grid is None:
+            bottom = self.ground_altitude.m_as(ureg.m)
+            top = self.toa_altitude.m_as(ureg.m)
+            step = min(100.0, (top - bottom) / 10.0)
+            self.grid = SphericalShellGridCoords(
+                levels=ureg.convert(
+                    np.arange(bottom, top + step * 0.1, step),
+                    ureg.m,
+                    ucc.get("length"),
+                ),
+                azimuths=np.asarray([0.0, 360.0]) * ureg.degree,
+                colatitudes=np.asarray([0.0, 180.0]) * ureg.degree,
+            )
+
+        super().__attrs_post_init__()
 
 
 @define(slots=False)

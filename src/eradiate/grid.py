@@ -9,6 +9,7 @@ from pinttr.util import ensure_units
 
 from .attrs import documented, frozen
 from .units import unit_context_config as ucc
+from .units import unit_registry as ureg
 
 
 @frozen(eq=False, init=False)
@@ -69,18 +70,91 @@ class GridCoords(ABC):
         on_setattr=None,
     )
 
-    def __init__(self, levels: pint.Quantity):
-        levels = ensure_units(levels, ucc.get("length"))
-        layer_height = np.diff(levels)
-        if not np.allclose(layer_height, layer_height[0]):
-            raise ValueError("levels must be regularly spaced")
-        layers = levels[:-1] + 0.5 * layer_height
-        self.__attrs_init__(
+    @staticmethod
+    def make_onedim_from_levels(levels: pint.Quantity):
+        """
+        Build a plane parallel 1D GridCoords using provided ``levels`` to
+        define the vertical extent and the horizontal width.
+        """
+
+        ensure_units(levels, ucc.get("length"))
+
+        default = GridCoords.make_default()
+
+        return PlaneParallelGridCoords(
             levels=levels,
-            layers=layers,
-            layer_height=layer_height[0],
-            total_height=levels[-1] - levels[0],
+            edges_x=default.edges_x,
+            edges_y=default.edges_y,
         )
+
+    @staticmethod
+    def make_onedim_arange(
+        top: pint.Quantity,
+        bottom: pint.Quantity,
+        step: pint.Quantity,
+        width: pint.Quantity,
+    ):
+        """
+        Build a plane parallel 1D GridCoords using ``width`` for horizontal
+        extents and the provided ``top`` and ``bottom`` altitude for the vertical coordinate.
+        """
+
+        ensure_units(top, ucc.get("length"))
+        ensure_units(bottom, ucc.get("length"))
+        ensure_units(width, ucc.get("length"))
+
+        levels = ureg.convert(
+            np.arange(
+                bottom.m_as(ureg.m), (top + step * 0.1).m_as(ureg.m), step.m_as(ureg.m)
+            ),
+            ureg.m,
+            ucc.get("length"),
+        )
+
+        return PlaneParallelGridCoords.from_extent_and_resolution(
+            levels=levels,
+            extent_x=width,
+            extent_y=width,
+            n_cells_x=1,
+            n_cells_y=1,
+        )
+
+    @staticmethod
+    def make_default():
+        """
+        Build a default plane parallel 1D GridCoords, the default grid for Eradiate
+        atmospheres.
+
+        Bottom altitude is set to zero and top at 120 km. Each layer is 100m high.
+        The horizontal extent is 1e6 km.
+        """
+
+        bottom = 0.0 * ureg.km
+        top = 120.0 * ureg.km
+        step = 100.0 * ureg.m
+        width = 1e6 * ureg.km
+
+        return GridCoords.make_onedim_arange(top, bottom, step, width)
+
+    @classmethod
+    def convert(cls, value: t.Any) -> t.Any:
+        if isinstance(value, str):
+            if value == "plane_parallel_coords":
+                return cls.make_default()
+            raise ValueError(f"No default factory for the type id {type}")
+        elif isinstance(value, dict):
+            value = value.copy()
+            value_t = value.pop("type")
+            if value_t == "plane_parallel_coords":
+                return PlaneParallelGridCoords(**value)
+            elif value_t == "spherical_shell_coords":
+                return SphericalShellGridCoords(**value)
+        elif isinstance(value, pint.Quantity):
+            return cls.make_onedim_from_levels(value)
+        elif isinstance(value, np.ndarray):
+            return cls.make_onedim_from_levels(value * ureg.m)
+
+        return value
 
     @property
     def layers(self) -> pint.Quantity:
@@ -170,7 +244,7 @@ class GridCoords(ABC):
 @frozen(eq=False, init=False)
 class PlaneParallelGridCoords(GridCoords):
     """
-    Plane parallel grid coordinates.
+    Plane parallel grid coordinates [``plane_parallel_coords``].
 
     Implements the internal coordinate system for Eradiate plane parallel
     geometries, using a local Cartesian reference frame.
@@ -242,7 +316,11 @@ class PlaneParallelGridCoords(GridCoords):
         edges_x: pint.Quantity,
         edges_y: pint.Quantity,
     ):
-        super().__init__(levels)
+        levels = ensure_units(levels, ucc.get("length"))
+        layer_height = np.diff(levels)
+        if not np.allclose(layer_height, layer_height[0]):
+            raise ValueError("levels must be regularly spaced")
+        layers = levels[:-1] + 0.5 * layer_height
 
         edges_x = ensure_units(edges_x, ucc.get("length"))
         edges_y = ensure_units(edges_y, ucc.get("length"))
@@ -257,6 +335,10 @@ class PlaneParallelGridCoords(GridCoords):
         centers_y, cell_length = _centers_and_step(edges_y, "y")
 
         self.__attrs_init__(
+            levels=levels,
+            layers=layers,
+            layer_height=layer_height[0],
+            total_height=levels[-1] - levels[0],
             edges_x=edges_x,
             edges_y=edges_y,
             centers_x=centers_x,
@@ -812,7 +894,7 @@ class PlaneParallelGridCoords(GridCoords):
 @frozen(eq=False, init=False)
 class SphericalShellGridCoords(GridCoords):
     """
-    Spherical shell grid coordinates.
+    Spherical shell grid coordinates [``spherical_shell_coords``].
 
     Implements the internal coordinate system for Eradiate spherical shell
     atmospheric geometries, using a geocentric spherical coordinate system.
@@ -874,7 +956,11 @@ class SphericalShellGridCoords(GridCoords):
         azimuths: pint.Quantity,
         colatitudes: pint.Quantity,
     ):
-        super().__init__(levels)
+        levels = ensure_units(levels, ucc.get("length"))
+        layer_height = np.diff(levels)
+        if not np.allclose(layer_height, layer_height[0]):
+            raise ValueError("levels must be regularly spaced")
+        layers = levels[:-1] + 0.5 * layer_height
 
         azimuths = ensure_units(azimuths, ucc.get("angle"))
         colatitudes = ensure_units(colatitudes, ucc.get("angle"))
@@ -889,6 +975,10 @@ class SphericalShellGridCoords(GridCoords):
         bands, band_width = _centers_and_step(colatitudes, "colatitudes")
 
         self.__attrs_init__(
+            levels=levels,
+            layers=layers,
+            layer_height=layer_height[0],
+            total_height=levels[-1] - levels[0],
             azimuths=azimuths,
             colatitudes=colatitudes,
             sectors=sectors,
