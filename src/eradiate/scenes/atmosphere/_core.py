@@ -20,7 +20,6 @@ from ..geometry import (
     PlaneParallelGeometry,
     SceneGeometry,
     SphericalShellGeometry,
-    XYGrid,
 )
 from ..phase import PhaseFunction
 from ..shapes import Shape
@@ -667,10 +666,14 @@ class AtmosphericMedium(Atmosphere, ABC):
             "sigma_t": sigma_t_grid,
         }
 
-        if isinstance(self.geometry, SphericalShellGeometry | XYGrid):
+        if isinstance(self.geometry, SphericalShellGeometry):
             medium = "heterogeneous"
         elif isinstance(self.geometry, PlaneParallelGeometry):
-            medium = "heterogeneous" if self.force_majorant else "piecewise"
+            medium = "piecewise"
+            if self.force_majorant:
+                medium = "heterogeneous"
+            if not self.geometry.grid.onedim:
+                medium = "heterogeneous"
         else:
             raise ValueError(
                 f"unhandled scene geometry type '{type(self.geometry).__name__}'"

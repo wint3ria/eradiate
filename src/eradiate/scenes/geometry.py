@@ -323,29 +323,3 @@ class SphericalShellGeometry(SceneGeometry):
             )
 
         super().__attrs_post_init__()
-
-
-@define(slots=False)
-class XYGrid:
-    xy_resolution: tuple[int, int] = documented(
-        attrs.field(
-            default=(3, 3),
-            converter=tuple,
-            validator=attrs.validators.instance_of(tuple),
-            kw_only=True,
-        ),
-        doc="Grid horizontal resolution",
-        type="tuple[int,int]",
-        init_type="tupe[int,int]",
-        default="(3,3)",
-    )
-
-
-@define
-class GriddedParallelGeometry(PlaneParallelGeometry, XYGrid):
-    pass
-
-
-@define
-class GriddedSphericalShellGeometry(SphericalShellGeometry, XYGrid):
-    pass

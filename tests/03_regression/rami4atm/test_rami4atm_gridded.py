@@ -11,7 +11,7 @@ from eradiate.scenes.atmosphere import (
     GriddedHeterogeneousAtmosphere,
     GriddedMolecularAtmosphere,
 )
-from eradiate.scenes.geometry import GriddedParallelGeometry
+from eradiate.scenes.geometry import PlaneParallelGeometry
 from eradiate.test_tools.regression import SidakTTest, figure_to_html
 from eradiate.test_tools.test_cases import rami4atm
 
@@ -46,9 +46,8 @@ def test_rami4atm_gridded(mode_ckd_double, case, artefact_dir):
     for exp in exps:
         mol_atm_1d = exp.atmosphere.molecular_atmosphere
 
-        geometry = GriddedParallelGeometry(
-            grid=exp.geometry.grid,
-            xy_resolution=resolution,
+        geometry = PlaneParallelGeometry(
+            grid=exp.geometry.grid.resampled(resx, resy),
         )
 
         mol_atm_3d = None
@@ -72,7 +71,7 @@ def test_rami4atm_gridded(mode_ckd_double, case, artefact_dir):
             geometry=geometry,
             molecular_atmosphere=mol_atm_3d,
             particle_layers=[
-                attrs.evolve(layer, tau_ref=tau_ref)
+                attrs.evolve(layer, tau_ref=tau_ref, geometry=geometry)
                 for layer in exp.atmosphere.particle_layers
             ],
         )
