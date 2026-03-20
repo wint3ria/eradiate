@@ -17,7 +17,6 @@ import xarray as xr
 from ._core import AtmosphericMedium
 from ._particle_dist import ParticleDistribution, particle_distribution_factory
 from ..core import traverse
-from ..geometry import XYGrid
 from ..phase import TabulatedPhaseFunction
 from ... import converters
 from ...attrs import define, documented
@@ -184,15 +183,12 @@ class ParticleLayer(AtmosphericMedium):
             return
         if np.size(value) == 1:
             return
-        if (
-            isinstance(self.geometry, XYGrid)
-            and value.shape != self.geometry.xy_resolution
-        ):
+        if value.shape != self.geometry.grid.shape[:2]:
             raise ValueError(
                 "While initialising ParticleLayer: the shape of the "
                 "extinction optical thickness is inconsistent with the "
                 "scene geometry. Expected a scalar value or a "
-                f"{self.geometry.wy_resolution} sized array, "
+                f"{self.geometry.grid.shape[:2]} sized array, "
                 f"received a {value.shape} sized array."
             )
 
@@ -294,9 +290,9 @@ class ParticleLayer(AtmosphericMedium):
         fractions = fractions / np.sum(fractions, axis=-1)
 
         # Broadcast 1D distributions on extra X and Y coordinates
-        if isinstance(self.geometry, XYGrid):
+        if not grid.onedim and fractions.ndim == 1:
             fractions = np.broadcast_to(
-                fractions, (*self.geometry.xy_resolution, len(x))
+                fractions, (grid.n_cells_x, grid.n_cells_y, len(x))
             )
 
         return fractions

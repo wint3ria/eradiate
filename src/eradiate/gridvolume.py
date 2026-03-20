@@ -17,7 +17,6 @@ from .scenes.geometry import (
     PlaneParallelGeometry,
     SceneGeometry,
     SphericalShellGeometry,
-    XYGrid,
 )
 
 
@@ -86,10 +85,7 @@ def make_volume_grid(
     """
     shape = None
     if geometry is not None:
-        shape = (
-            *(geometry.xy_resolution if isinstance(geometry, XYGrid) else (1, 1)),
-            geometry.grid.n_layers,
-        )
+        shape = geometry.grid.shape
     grid = _prepare_grid(
         eval_grid,
         ctx,

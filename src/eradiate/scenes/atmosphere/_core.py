@@ -21,7 +21,6 @@ from ..geometry import (
     PlaneParallelGeometry,
     SceneGeometry,
     SphericalShellGeometry,
-    XYGrid,
 )
 from ..phase import PhaseFunction
 from ..shapes import Shape
@@ -707,7 +706,7 @@ class AtmosphericMedium(Atmosphere, ABC):
 
         sigma_t_id =  f"{self.id}_sigma_t"
 
-        if isinstance(self.geometry, SphericalShellGeometry | XYGrid):
+        if isinstance(self.geometry, SphericalShellGeometry):
             medium = "heterogeneous"
             if self.extremum_resolution != (1, 1, 1):
             volume_rmin = self.geometry.atmosphere_volume_rmin
@@ -720,8 +719,12 @@ class AtmosphericMedium(Atmosphere, ABC):
                 "to_world": to_world,
             }
         elif isinstance(self.geometry, PlaneParallelGeometry):
-            medium = "heterogeneous" if self.force_majorant else "piecewise"
             to_world = self.geometry.atmosphere_volume_to_world
+            medium = "piecewise"
+            if self.force_majorant:
+                medium = "heterogeneous"
+            if not self.geometry.grid.onedim:
+                medium = "heterogeneous"
             if medium == "heterogeneous":
                 if self.extremum_resolution != (1, 1, 1):
                     extremum = {
