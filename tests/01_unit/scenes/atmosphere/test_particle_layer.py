@@ -323,7 +323,7 @@ def test_particle_layer_eval_sigma_t_impl(
     n_wavelengths = 3
     n_layers = 10
     wavelengths = np.linspace(500.0, 1500.0, n_wavelengths) * ureg.nm
-    grid = GridCoords(np.linspace(0, 5, n_layers + 1) * ureg.km)
+    grid = GridCoords.convert(np.linspace(0, 5, n_layers + 1) * ureg.km)
 
     layer = ParticleLayer(
         geometry={

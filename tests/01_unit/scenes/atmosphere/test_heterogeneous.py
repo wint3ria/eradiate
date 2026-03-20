@@ -6,7 +6,6 @@ import eradiate
 from eradiate import unit_context_config as ucc
 from eradiate import unit_registry as ureg
 from eradiate.contexts import KernelContext
-from eradiate.grid import GridCoords
 from eradiate.scenes.atmosphere import (
     HeterogeneousAtmosphere,
     ParticleLayer,
@@ -212,7 +211,7 @@ def test_heterogeneous_mix_weights(
             "type": "plane_parallel",
             "ground_altitude": 0.0 * ureg.km,
             "toa_altitude": 100.0 * ureg.km,
-            "grid": GridCoords(np.linspace(0, 100, 101) * ureg.km),
+            "grid": np.linspace(0, 100, 101) * ureg.km,
         }
     )
 
