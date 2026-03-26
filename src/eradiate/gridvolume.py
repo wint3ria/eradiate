@@ -147,7 +147,8 @@ def _postprocess_template(
             "rmin": geometry.atmosphere_volume_rmin,
         }
     if geometry is not None:
-        gridvolume["to_world"] = geometry.atmosphere_volume_to_world
+        to_world = geometry.grid.to_world
+        gridvolume["to_world"] = to_world
     return gridvolume
 
 
