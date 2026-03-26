@@ -7,8 +7,11 @@ import pint
 import pinttr
 from pinttr.util import ensure_units
 
+from eradiate.kernel.transform import map_unit_cube
+
 from .attrs import documented, frozen
 from .units import unit_context_config as ucc
+from .units import unit_context_kernel as uck
 from .units import unit_registry as ureg
 
 
@@ -260,6 +263,11 @@ class GridCoords(ABC):
         """Is this grid suitable for expressing properties of a 1D atmosphere"""
         return self.n_cells_x == 1 and self.n_cells_y == 1
 
+    @property
+    @abstractmethod
+    def to_world(self):
+        pass
+
 
 @frozen(eq=False, init=False)
 class PlaneParallelGridCoords(GridCoords):
@@ -385,6 +393,18 @@ class PlaneParallelGridCoords(GridCoords):
             cell_length=cell_length,
             total_width=edges_x[-1] - edges_x[0],
             total_length=edges_y[-1] - edges_y[0],
+        )
+
+    @property
+    def to_world(self):
+        unit = uck.get("length")
+        return map_unit_cube(
+            self.edges_x.min().m_as(unit),
+            self.edges_x.max().m_as(unit),
+            self.edges_y.min().m_as(unit),
+            self.edges_y.max().m_as(unit),
+            self.levels.min().m_as(unit),
+            self.levels.max().m_as(unit),
         )
 
     @property
