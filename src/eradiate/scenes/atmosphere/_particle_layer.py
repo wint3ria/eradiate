@@ -387,7 +387,7 @@ class ParticleLayer(AtmosphericMedium):
     @bottom.validator
     @top.validator
     def _bottom_top_validator(self, attribute, value):
-        if self.bottom >= self.top:
+        if np.any(self.bottom >= self.top):
             raise ValueError(
                 f"while validating '{attribute.name}': bottom altitude must be "
                 "lower than top altitude "
@@ -502,7 +502,9 @@ class ParticleLayer(AtmosphericMedium):
             )
 
     @tau_ref.validator
-    def _tau_ref_shape_validator(self, attribute, value):
+    @bottom.validator
+    @top.validator
+    def _xy_shape_validator(self, attribute, value):
         if self.geometry is None:
             return
         if np.size(value) == 1:
@@ -510,7 +512,7 @@ class ParticleLayer(AtmosphericMedium):
         if value.shape != self.geometry.grid.shape[:2]:
             raise ValueError(
                 "While initialising ParticleLayer: the shape of the "
-                "extinction optical thickness is inconsistent with the "
+                f"{attribute.name} attribute is inconsistent with the "
                 "scene geometry. Expected a scalar value or a "
                 f"{self.geometry.grid.shape[:2]} sized array, "
                 f"received a {value.shape} sized array."
