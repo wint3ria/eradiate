@@ -112,12 +112,16 @@ class _partial(partial):
     """
 
     def __repr__(self):
-        cls_name = self.get_bound_instance().__class__.__name__
+        instance = self.get_bound_instance()
+        if instance is None:
+            cls_name = None
+        else:
+            cls_name = instance.__class__.__name__
         return f"partial({self.func.__name__}, {cls_name}, extra_parameters={list(self.keywords)})"
 
     def get_bound_instance(self):
         """Return the instance to which the ``eval_grid`` method is bound."""
-        return self.keywords["eval_grid"].__self__
+        return self.keywords["eval_grid"].__dict__.get("__self__", None)
 
 
 def _postprocess_template(
