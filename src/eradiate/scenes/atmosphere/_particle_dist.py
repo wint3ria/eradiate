@@ -49,6 +49,9 @@ class ParticleDistribution(ABC):
     def __call__(self, x: np.typing.ArrayLike) -> np.ndarray:
         pass
 
+    def __mul__(self, other):
+        return lambda x: np.multiply(self(x), other(x))
+
 
 @define
 class UniformParticleDistribution(ParticleDistribution):
@@ -83,10 +86,10 @@ class UniformParticleDistribution(ParticleDistribution):
         if len(value) != 2:
             raise ValueError(
                 f"while validating '{attribute.name}': passed array must have "
-                "exactly 2 elements"
+                "a length of 2"
             )
 
-        if value[1] <= value[0]:
+        if np.any(value[1] <= value[0]):
             raise ValueError(
                 f"while validating '{attribute.name}': bounds must be sorted in "
                 "ascending order "
@@ -217,15 +220,15 @@ class ArrayParticleDistribution(ParticleDistribution):
 
     @values.validator
     def _values_validator(self, attribute, value):
-        if value.ndim != 1:
+        if value.ndim not in {1, 3}:
             raise ValueError(
-                f"while validating {attribute.name}: only 1D arrays are allowed"
+                f"while validating {attribute.name}: only 1D or 3D arrays are allowed"
             )
 
-        if len(value) < 2:
+        if value.shape[-1] < 2:
             raise ValueError(
                 f"while validating {attribute.name}: array must have at least 2 "
-                "elements"
+                "elements along the interpolation z-axis"
             )
 
     coords: np.ndarray = documented(
