@@ -208,6 +208,16 @@ class GridCoords(ABC):
 
     @property
     @abstractmethod
+    def cells_x(self) -> pint.Quantity:
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def cells_y(self) -> pint.Quantity:
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
     def n_cells_x(self) -> int:
         """Number of cells in the X direction."""
         raise NotImplementedError()
@@ -313,6 +323,24 @@ class PlaneParallelGridCoords(GridCoords):
         units=ucc.deferred("length"),
         on_setattr=None,
     )
+
+    def __rich_repr__(self):
+        yield "levels", self.levels
+        yield "layers", self.layers
+        yield "layer_height", self.layer_height
+        yield "total_height", self.total_height
+
+        yield "edges_x", self.edges_x
+        yield "centers_x", self.centers_x
+        yield "cell_width", self.cell_width
+        yield "total_width", self.total_width
+
+        yield "edges_y", self.edges_y
+        yield "centers_y", self.centers_y
+        yield "cell_length", self.cell_length
+        yield "total_length", self._total_length
+
+        yield "shape", self.shape
 
     @_cell_width.validator
     @_cell_length.validator
@@ -900,6 +928,14 @@ class PlaneParallelGridCoords(GridCoords):
             edges_y=self.edges_y[[0, -1]],
         )
 
+    @property
+    def cells_x(self):
+        return self.centers_x
+
+    @property
+    def cells_y(self):
+        return self.centers_y
+
 
 @frozen(eq=False, init=False)
 class SphericalShellGridCoords(GridCoords):
@@ -1065,3 +1101,27 @@ class SphericalShellGridCoords(GridCoords):
             f"  z:          [{self.levels[0]:~P}, {self.levels[-1]:~P}], {self.n_layers} layers\n"
             f")"
         )
+
+    @property
+    def cells_x(self):
+        return self.sectors
+
+    @property
+    def cells_y(self):
+        return self.bands
+
+    def __rich_repr__(self):
+        yield "levels", self.levels
+        yield "layers", self.layers
+        yield "layer_height", self.layer_height
+        yield "total_height", self.total_height
+
+        yield "azimuths", self.azimuths
+        yield "sectors", self.sectors
+        yield "sector_width", self.sector_width
+
+        yield "colatitudes", self.colatitudes
+        yield "bands", self.bands
+        yield "band_width", self.band_width
+
+        yield "shape", self.shape
