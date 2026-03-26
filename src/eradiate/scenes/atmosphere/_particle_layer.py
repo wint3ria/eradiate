@@ -5,8 +5,9 @@ Particle layers.
 from __future__ import annotations
 
 import warnings
+from abc import abstractmethod
 from functools import singledispatchmethod
-from typing import Literal
+from typing import Callable, Literal
 
 import attrs
 import numpy as np
@@ -17,6 +18,7 @@ import xarray as xr
 from ._core import AtmosphericMedium
 from ._particle_dist import ParticleDistribution, particle_distribution_factory
 from ..core import traverse
+from ..geometry import PlaneParallelGeometry, SceneGeometry, SphericalShellGeometry
 from ..phase import TabulatedPhaseFunction
 from ... import converters
 from ...attrs import define, documented
@@ -45,6 +47,241 @@ def _particle_layer_distribution_converter(value):
             return particle_distribution_factory.convert({"type": "exponential"})
 
     return particle_distribution_factory.convert(value)
+
+
+def _extent_converter_x(value, self_):
+    if value is not None:
+        return value
+    if self_.geometry is None:
+        raise ValueError("Could not infer default extent for a None geometry")
+    elif isinstance(self_.geometry, PlaneParallelGeometry):
+        return LengthExtent(
+            extent_min=self_.geometry.grid.edges_x.min(),
+            extent_max=self_.geometry.grid.edges_x.max(),
+        )
+    elif isinstance(self_.geometry, SphericalShellGeometry):
+        return AngleExtent(
+            extent_min=self_.geometry.grid.azimuths.min(),
+            extent_max=self_.geometry.grid.azimuths.max(),
+        )
+    else:
+        raise NotImplementedError(
+            f"Geometric type {type(self_.geometry)} is not supported"
+        )
+
+
+def _extent_converter_y(value, self_):
+    if value is not None:
+        return value
+    if self_.geometry is None:
+        raise ValueError("Could not infer default extent for a None geometry")
+    elif isinstance(self_.geometry, PlaneParallelGeometry):
+        return LengthExtent(
+            extent_min=self_.geometry.grid.edges_y.min(),
+            extent_max=self_.geometry.grid.edges_y.max(),
+        )
+    elif isinstance(self_.geometry, SphericalShellGeometry):
+        return AngleExtent(
+            extent_min=self_.geometry.grid.colatitudes.min(),
+            extent_max=self_.geometry.grid.colatitudes.max(),
+        )
+    else:
+        raise NotImplementedError(
+            f"Geometric type {type(self_.geometry)} is not supported"
+        )
+
+
+@define(eq=False, slots=False)
+class HorizontalExtent:
+    """
+    Abstract horizontal extent class. Handles unit
+    conversion from plane parallel extents in lengths
+    to spherical extents in angles, depending on the
+    considered radius.
+    """
+
+    @property
+    def length(self):
+        return self.extent_max - self.extent_min
+
+    @property
+    def extent_min(self) -> pint.Quantity:
+        return self._extent_min
+
+    @property
+    def extent_max(self) -> pint.Quantity:
+        return self._extent_max
+
+    @abstractmethod
+    def to_geometry(self, g: SceneGeometry) -> HorizontalExtent:
+        pass
+
+    def eval_geometry(self, g: SceneGeometry, op: Callable):
+        extent = self.to_geometry(g)
+        try:
+            return op(extent)
+        except pint.DimensionalityError as e:
+            raise RuntimeError(
+                f"Could not evaluate operation on extent {self}. "
+                f"Attempt to convert extent to the provided {type(g)} geometry "
+                f"yields the extent {extent} that is not compatible with the operation."
+            ) from e
+
+    def eval_length(self, g: SceneGeometry) -> pint.Quantity:
+        return self.eval_geometry(g, lambda e: e.length)
+
+    def eval_min(self, g: SceneGeometry) -> pint.Quantity:
+        return self.eval_geometry(g, lambda e: e.extent_min)
+
+    def eval_max(self, g: SceneGeometry) -> pint.Quantity:
+        return self.eval_geometry(g, lambda e: e.extent_max)
+
+
+@define(eq=False, slots=False)
+class LengthExtent(HorizontalExtent):
+    """
+    Horizontal extent of a ParticleLayer expressed on a local
+    plane parellel atmospheric coordinates grid.
+    """
+
+    _extent_min: pint.Quantity = documented(
+        pinttr.field(
+            default=ureg.Quantity(-1.0, ureg.km),
+            validator=[pinttr.validators.has_compatible_units],
+            units=ucc.deferred("length"),
+        ),
+        doc="Min limit of the horizontal extent in a plane parallel grid.\n"
+        "\n"
+        "Unit-enabled field (default: ucc[length])",
+        type="quantity",
+        init_type="float or quantity",
+        default="-1 km",
+    )
+
+    _extent_max: pint.Quantity = documented(
+        pinttr.field(
+            default=ureg.Quantity(1.0, ureg.km),
+            validator=[pinttr.validators.has_compatible_units],
+            units=ucc.deferred("length"),
+        ),
+        doc="Max limit of the horizontal extent in a plane parallel grid.\n"
+        "\n"
+        "Unit-enabled field (default: ucc[length]).",
+        type="quantity",
+        init_type="float or quantity",
+        default="1 km.",
+    )
+
+    @_extent_min.validator
+    @_extent_max.validator
+    def _extent_validator(self, attribute, value):
+        assert self._extent_min < self._extent_max
+
+    def to_geometry(self, g: SceneGeometry | None) -> HorizontalExtent:
+        """
+        Attempt to convert a plane parallel horizontal extent to a compatible
+        geometric type.
+
+        Return ``self`` if ``g`` is a ``PlaneParallelGeometry`` or g is ``None``,
+        without any conversion performed.
+
+        If ``g`` is a SphericalShellGeometry, the following conversion is performed:
+        * The zero position of the plane parallel grid is positioned at (colatitude=0°, azimuth=0°).
+        * The source extent min and max lengths are mapped to the sphere angular positions from this frame.
+        using the ``planet_radius`` of g.
+        * The return type is then an ``AngleExtent``.
+
+        Emits a warning if the conversion is performed.
+        """
+
+        if g is None:
+            return self
+        if isinstance(g, PlaneParallelGeometry):
+            return self
+        if isinstance(g, SphericalShellGeometry):
+            warnings.warn(
+                "Performing automatic conversion of particles horizontal extent "
+                "from plane parallel to spherical geometry at runtime. The converter "
+                "placed the plane parallel coordinate reference frame at the arbitrary "
+                "point (colatitude=0°, azimuth=0°), which might not correspond to any of"
+                "the measure's observation target. Particles location on the spherical "
+                "coordinate grid should be defined explicitely by an angular extent "
+                "instead."
+            )
+            radius = g.planet_radius
+            extent_min = pint.Quantity(
+                self._extent_min.m_as(ureg.m) / radius.m_as(ureg.m), ureg.rad
+            )
+            extent_max = pint.Quantity(
+                self._extent_max.m_as(ureg.m) / radius.m_as(ureg.m), ureg.rad
+            )
+            return AngleExtent(extent_min=extent_min, extent_max=extent_max)
+
+        raise NotImplementedError("Not supported geometry type ({type(g)})")
+
+
+@define(eq=False, slots=False)
+class AngleExtent(HorizontalExtent):
+    """
+    Horizontal extent of a ParticleLayer expressed on a geocentric
+    spherical atmospheric coordinates grid.
+    """
+
+    _extent_min: pint.Quantity = documented(
+        pinttr.field(
+            default=ureg.Quantity(0.0, ureg.degree),
+            validator=[pinttr.validators.has_compatible_units],
+            units=ucc.deferred("angle"),
+        ),
+        doc="Min limit of the horizontal extent in a spherical grid.\n"
+        "\n"
+        "Unit-enabled field (default: ucc[angle])",
+        type="quantity",
+        init_type="float or quantity",
+        default="0 degree",
+    )
+
+    _extent_max: pint.Quantity = documented(
+        pinttr.field(
+            default=ureg.Quantity(1.0, ureg.degree),
+            validator=[pinttr.validators.has_compatible_units],
+            units=ucc.deferred("angle"),
+        ),
+        doc="Max limit of the horizontal extent in a spherical grid.\n"
+        "\n"
+        "Unit-enabled field (default: ucc[angle]).",
+        type="quantity",
+        init_type="float or quantity",
+        default="1 degree",
+    )
+
+    @_extent_min.validator
+    @_extent_max.validator
+    def _extent_validator(self, attribute, value):
+        assert self._extent_min < self._extent_max
+
+    def to_geometry(self, g: Geometry) -> HorizontalExtent:
+        """
+        Attempt to convert an angular horizontal extent to a compatible
+        geometric type.
+
+        Return ``self`` if ``g`` is a ``SphericalShellGeometry`` or g is ``None``,
+        without any conversion performed.
+
+        Raises ValueError If ``g`` is a PlaneParallelGeometry.
+        """
+
+        if g is None:
+            return self
+        if isinstance(g, SphericalShellGeometry):
+            return self
+        if isinstance(g, PlaneParallelGeometry):
+            # Cannot convert to plane parallel without a planet radius information,
+            raise ValueError(
+                "Cannot automatically convert an extent defined on a spherical "
+                "coordinate grid to a plane parallel coordinate grid."
+            )
+        raise NotImplementedError("Not supported geometry type ({type(g)})")
 
 
 @define(eq=False, slots=False)
