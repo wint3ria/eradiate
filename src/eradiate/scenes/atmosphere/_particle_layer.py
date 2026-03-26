@@ -604,24 +604,58 @@ class ParticleLayer(AtmosphericMedium):
 
     def eval_fractions(self, grid: GridCoords) -> np.ndarray:
         """
-        Compute the particle number fraction in the particle layer.
+        Compute the particle number fraction in the particle layer in 3D.
+
+        Each dimension of the fractions grid is evaluated according to their
+        respective particle distribution.
+
+        The Z dimension (vertical extent) also supports spatially varying
+        parameters for its top, bottom, and tau_ref parameters. In these cases
+        each value of the parameter is evaluated independently for the corresponding
+        1D Z-column of particles on the uniform 3D grid.
 
         Returns
         -------
         ndarray
-            Particle number fractions as a ([x, y, ]n_layers,)-shaped array.
+            Particle number fractions as a (n_x, n_y, n_layers,)-shaped array.
         """
-        x = (grid.layers - self.bottom) / (self.top - self.bottom)
-        fractions = self.distribution(x.m_as(ureg.dimensionless))
-        fractions = fractions / np.sum(fractions, axis=-1)
 
-        # Broadcast 1D distributions on extra X and Y coordinates
-        if not grid.onedim and fractions.ndim == 1:
-            fractions = np.broadcast_to(
-                fractions, (grid.n_cells_x, grid.n_cells_y, len(x))
+        # Variable bottom and top altitude
+        bottom = np.atleast_1d(self.bottom)
+        layers = np.atleast_3d(np.ones(bottom.shape)) @ np.atleast_2d(grid.layers)
+
+        def eval_dim(grid_dim):
+            return lambda ext: (grid_dim - ext.extent_min) / ext.length
+
+        x = self.x_extent.eval_geometry(self.geometry, eval_dim(grid.cell_x))
+        y = self.y_extent.eval_geometry(self.geometry, eval_dim(grid.cell_y))
+        z = (layers.T - bottom.T).T / (self.top - self.bottom)
+
+        # Only the z dimension (altitude) supports variable extents wrt to x and y dims.
+        if x.squeeze().ndim > 1 or y.squeeze().ndim > 1:
+            raise ValueError("Multidimensional horizontal extents are not supported")
+
+        fractions_x = self.distribution_x(x.m_as(ureg.dimensionless))
+        fractions_y = self.distribution_y(y.m_as(ureg.dimensionless))
+        fractions_z = self.distribution_z(z.m_as(ureg.dimensionless))
+
+        fractions_x = fractions_x / np.sum(fractions_x, axis=-1)
+        fractions_y = fractions_y / np.sum(fractions_y, axis=-1)
+        fractions_z = fractions_z / np.sum(fractions_z, axis=-1)
+
+        # x and y fractions must be 1D.
+        # z fractions are broadcastable to the grid shape.
+        fractions_xy = fractions_x.reshape(-1, 1) @ fractions_y.reshape(1, -1)
+        fractions_xyz = (
+            fractions_xy.reshape(
+                np.atleast_1d(x.squeeze()).shape[0],
+                np.atleast_1d(y.squeeze()).shape[0],
+                1,
             )
+            * fractions_z
+        )
 
-        return fractions
+        return fractions_xyz
 
     def eval_mfp(self, ctx: KernelContext) -> pint.Quantity:
         min_sigma_s = self.eval_sigma_s(ctx.si).min(axis=-1)
