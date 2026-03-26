@@ -338,6 +338,52 @@ class ParticleLayer(AtmosphericMedium):
         default="1 km.",
     )
 
+    y_extent: HorizontalExtent = documented(
+        attrs.field(
+            default=None,
+            validator=[
+                attrs.validators.optional(
+                    attrs.validators.instance_of(HorizontalExtent)
+                )
+            ],
+            converter=attrs.Converter(_extent_converter_y, takes_self=True),
+        ),
+        doc="Horizontal extent of the particles in the Y dimension of the atmosphere "
+        "coordinate system.",
+        init_type="`NoneType`",
+        type=":class:`.HorizontalExtent`",
+        default="LengthExtent()",
+    )
+
+    x_extent: HorizontalExtent = documented(
+        attrs.field(
+            default=None,
+            validator=[
+                attrs.validators.optional(
+                    attrs.validators.instance_of(HorizontalExtent)
+                )
+            ],
+            converter=attrs.Converter(_extent_converter_x, takes_self=True),
+        ),
+        doc="Horizontal extent of the particles in the X dimension of the atmosphere "
+        "coordinate system.",
+        init_type="`NoneType`",
+        type=":class:`.HorizontalExtent`",
+        default="LengthExtent()",
+    )
+
+    @y_extent.validator
+    @x_extent.validator
+    def _extent_validator(self, attribute, value):
+        # Use type() rather than isinstance() to enforce that both extents
+        # are the same concrete type, not just compatible supertypes.
+        if type(self.x_extent) is not type(self.y_extent):
+            raise ValueError(
+                f"while validating '{attribute.name}': x_extent and y_extent must "
+                f"be of the same type (got {type(self.x_extent).__name__} and "
+                f"{type(self.y_extent).__name__})"
+            )
+
     @bottom.validator
     @top.validator
     def _bottom_top_validator(self, attribute, value):
@@ -354,7 +400,48 @@ class ParticleLayer(AtmosphericMedium):
             converter=_particle_layer_distribution_converter,
             validator=attrs.validators.instance_of(ParticleDistribution),
         ),
-        doc="Particle distribution. Simple defaults can be set using a string: "
+        doc="Particle distribution in the Z dimension of the coords grid. "
+        "Simple defaults can be set using a string: "
+        '``"uniform"`` (resp. ``"gaussian"``, ``"exponential"``) is converted to '
+        ":class:`UniformParticleDistribution() <.UniformParticleDistribution>` "
+        "(resp. :class:`GaussianParticleDistribution() <.GaussianParticleDistribution>`, "
+        ":class:`ExponentialParticleDistribution() <.ExponentialParticleDistribution>`).",
+        init_type=":class:`.ParticleDistribution` or dict or "
+        '{"uniform", "gaussian", "exponential"}, optional',
+        type=":class:`.ParticleDistribution`",
+        default='"uniform"',
+    )
+
+    @property
+    def distribution_z(self):
+        return self.distribution
+
+    distribution_y: ParticleDistribution = documented(
+        attrs.field(
+            default="uniform",
+            converter=_particle_layer_distribution_converter,
+            validator=attrs.validators.instance_of(ParticleDistribution),
+        ),
+        doc="Particle distribution in the Y dimension of the coords grid. "
+        "Simple defaults can be set using a string: "
+        '``"uniform"`` (resp. ``"gaussian"``, ``"exponential"``) is converted to '
+        ":class:`UniformParticleDistribution() <.UniformParticleDistribution>` "
+        "(resp. :class:`GaussianParticleDistribution() <.GaussianParticleDistribution>`, "
+        ":class:`ExponentialParticleDistribution() <.ExponentialParticleDistribution>`).",
+        init_type=":class:`.ParticleDistribution` or dict or "
+        '{"uniform", "gaussian", "exponential"}, optional',
+        type=":class:`.ParticleDistribution`",
+        default='"uniform"',
+    )
+
+    distribution_x: ParticleDistribution = documented(
+        attrs.field(
+            default="uniform",
+            converter=_particle_layer_distribution_converter,
+            validator=attrs.validators.instance_of(ParticleDistribution),
+        ),
+        doc="Particle distribution in the X dimension of the coords grid. "
+        "Simple defaults can be set using a string: "
         '``"uniform"`` (resp. ``"gaussian"``, ``"exponential"``) is converted to '
         ":class:`UniformParticleDistribution() <.UniformParticleDistribution>` "
         "(resp. :class:`GaussianParticleDistribution() <.GaussianParticleDistribution>`, "
