@@ -627,8 +627,8 @@ class ParticleLayer(AtmosphericMedium):
         def eval_dim(grid_dim):
             return lambda ext: (grid_dim - ext.extent_min) / ext.length
 
-        x = self.x_extent.eval_geometry(self.geometry, eval_dim(grid.cell_x))
-        y = self.y_extent.eval_geometry(self.geometry, eval_dim(grid.cell_y))
+        x = self.x_extent.eval_geometry(self.geometry, eval_dim(grid.cells_x))
+        y = self.y_extent.eval_geometry(self.geometry, eval_dim(grid.cells_y))
         z = (layers.T - bottom.T).T / (self.top - self.bottom)
 
         # Only the z dimension (altitude) supports variable extents wrt to x and y dims.
@@ -638,10 +638,6 @@ class ParticleLayer(AtmosphericMedium):
         fractions_x = self.distribution_x(x.m_as(ureg.dimensionless))
         fractions_y = self.distribution_y(y.m_as(ureg.dimensionless))
         fractions_z = self.distribution_z(z.m_as(ureg.dimensionless))
-
-        fractions_x = fractions_x / np.sum(fractions_x, axis=-1)
-        fractions_y = fractions_y / np.sum(fractions_y, axis=-1)
-        fractions_z = fractions_z / np.sum(fractions_z, axis=-1)
 
         # x and y fractions must be 1D.
         # z fractions are broadcastable to the grid shape.
@@ -655,7 +651,7 @@ class ParticleLayer(AtmosphericMedium):
             * fractions_z
         )
 
-        return fractions_xyz
+        return (fractions_xyz.T / fractions_xyz.sum(axis=-1).T).T
 
     def eval_mfp(self, ctx: KernelContext) -> pint.Quantity:
         min_sigma_s = self.eval_sigma_s(ctx.si).min(axis=-1)
