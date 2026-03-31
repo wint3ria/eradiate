@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+import mitsuba as mi
 import numpy as np
 import pint
 import pinttr
@@ -265,7 +266,7 @@ class GridCoords(ABC):
 
     @property
     @abstractmethod
-    def to_world(self):
+    def to_world(self) -> mi.ScalarTransform4f:
         pass
 
 
@@ -396,7 +397,7 @@ class PlaneParallelGridCoords(GridCoords):
         )
 
     @property
-    def to_world(self):
+    def to_world(self) -> mi.ScalarTransform4f:
         unit = uck.get("length")
         return map_unit_cube(
             self.edges_x.min().m_as(unit),
@@ -1129,6 +1130,10 @@ class SphericalShellGridCoords(GridCoords):
     @property
     def cells_y(self):
         return self.bands
+
+    @property
+    def to_world(self) -> mi.ScalarTransform4f:
+        raise NotImplementedError("WIP")
 
     def __rich_repr__(self):
         yield "levels", self.levels
