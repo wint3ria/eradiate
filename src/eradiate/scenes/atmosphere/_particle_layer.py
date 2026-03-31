@@ -651,7 +651,11 @@ class ParticleLayer(AtmosphericMedium):
             * fractions_z
         )
 
-        return (fractions_xyz.T / fractions_xyz.sum(axis=-1).T).T
+        out = np.zeros(fractions_xyz.T.shape)
+        fractions_sum = fractions_xyz.sum(axis=-1).T
+        np.divide(fractions_xyz.T, fractions_sum, out=out, where=fractions_sum > 0.0)
+
+        return out.T
 
     def eval_mfp(self, ctx: KernelContext) -> pint.Quantity:
         min_sigma_s = self.eval_sigma_s(ctx.si).min(axis=-1)
@@ -770,7 +774,7 @@ class ParticleLayer(AtmosphericMedium):
 
     def eval_albedo_mono(self, w: pint.Quantity, grid: GridCoords) -> pint.Quantity:
         if self.has_absorption and self.has_scattering:
-            albedo = self._eval_albedo_impl(w, grid).squeeze()
+            albedo = self._eval_albedo_impl(w, grid).squeeze(axis=0)
 
         elif self.has_absorption and not self.has_scattering:
             albedo = 0.0 * ureg.dimensionless
@@ -814,7 +818,7 @@ class ParticleLayer(AtmosphericMedium):
         )
 
     def eval_sigma_t_mono(self, w: pint.Quantity, grid: GridCoords) -> pint.Quantity:
-        result = self._eval_sigma_t_impl(w, grid).squeeze()
+        result = self._eval_sigma_t_impl(w, grid).squeeze(axis=0)
 
         if self.has_absorption and self.has_scattering:
             return result
@@ -860,7 +864,7 @@ class ParticleLayer(AtmosphericMedium):
         )
 
     def eval_sigma_a_mono(self, w: pint.Quantity, grid: GridCoords) -> pint.Quantity:
-        value = self._eval_sigma_a_impl(w, grid).squeeze()
+        value = self._eval_sigma_a_impl(w, grid).squeeze(axis=0)
         return value if self.has_absorption else np.zeros_like(value) * value.units
 
     def eval_sigma_a_ckd(
@@ -891,7 +895,7 @@ class ParticleLayer(AtmosphericMedium):
         )
 
     def eval_sigma_s_mono(self, w: pint.Quantity, grid: GridCoords) -> pint.Quantity:
-        value = self._eval_sigma_s_impl(w, grid).squeeze()
+        value = self._eval_sigma_s_impl(w, grid).squeeze(axis=0)
         return value if self.has_scattering else np.zeros_like(value) * value.units
 
     def eval_sigma_s_ckd(
