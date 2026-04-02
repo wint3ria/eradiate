@@ -50,16 +50,20 @@ def _particle_layer_distribution_converter(value):
 
 
 def _extent_converter_x(value, self_):
-    if value is not None:
+    if not (value is None or isinstance(value, dict)):
         return value
     if self_.geometry is None:
         raise ValueError("Could not infer default extent for a None geometry")
     elif isinstance(self_.geometry, PlaneParallelGeometry):
+        if isinstance(value, dict):
+            return LengthExtent(**value)
         return LengthExtent(
             extent_min=self_.geometry.grid.edges_x.min(),
             extent_max=self_.geometry.grid.edges_x.max(),
         )
     elif isinstance(self_.geometry, SphericalShellGeometry):
+        if isinstance(value, dict):
+            return AngleExtent(**value)
         return AngleExtent(
             extent_min=self_.geometry.grid.azimuths.min(),
             extent_max=self_.geometry.grid.azimuths.max(),
@@ -71,16 +75,20 @@ def _extent_converter_x(value, self_):
 
 
 def _extent_converter_y(value, self_):
-    if value is not None:
+    if not (value is None or isinstance(value, dict)):
         return value
     if self_.geometry is None:
         raise ValueError("Could not infer default extent for a None geometry")
     elif isinstance(self_.geometry, PlaneParallelGeometry):
+        if isinstance(value, dict):
+            return LengthExtent(**value)
         return LengthExtent(
             extent_min=self_.geometry.grid.edges_y.min(),
             extent_max=self_.geometry.grid.edges_y.max(),
         )
     elif isinstance(self_.geometry, SphericalShellGeometry):
+        if isinstance(value, dict):
+            return AngleExtent(**value)
         return AngleExtent(
             extent_min=self_.geometry.grid.colatitudes.min(),
             extent_max=self_.geometry.grid.colatitudes.max(),
