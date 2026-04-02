@@ -110,7 +110,7 @@ class HomogeneousAtmosphere(Atmosphere):
     #                           Evaluation methods
     # --------------------------------------------------------------------------
 
-    def eval_mfp(self, ctx: KernelContext) -> pint.Quantity:
+    def eval_mfp(self, ctx: KernelContext, _=None) -> pint.Quantity:
         # Inherit docstring
         return (
             1.0 / self.eval_sigma_s(ctx.si)
@@ -118,7 +118,7 @@ class HomogeneousAtmosphere(Atmosphere):
             else 1.0 / self.eval_sigma_a(ctx.si)
         )
 
-    def eval_albedo(self, si: SpectralIndex) -> pint.Quantity:
+    def eval_albedo(self, si: SpectralIndex, _=None) -> pint.Quantity:
         """
         Return albedo at given spectral index.
 
@@ -134,7 +134,7 @@ class HomogeneousAtmosphere(Atmosphere):
         """
         return self.eval_sigma_s(si) / (self.eval_sigma_s(si) + self.eval_sigma_a(si))
 
-    def eval_sigma_a(self, si: SpectralIndex) -> pint.Quantity:
+    def eval_sigma_a(self, si: SpectralIndex, _=None) -> pint.Quantity:
         """
         Return absorption coefficient at given spectral index.
 
@@ -150,7 +150,7 @@ class HomogeneousAtmosphere(Atmosphere):
         """
         return self.sigma_a.eval(si)
 
-    def eval_sigma_s(self, si: SpectralIndex) -> pint.Quantity:
+    def eval_sigma_s(self, si: SpectralIndex, _=None) -> pint.Quantity:
         """
         Return scattering coefficient at given spectral index.
 
@@ -166,7 +166,7 @@ class HomogeneousAtmosphere(Atmosphere):
         """
         return self.sigma_s.eval(si)
 
-    def eval_sigma_t(self, si: SpectralIndex) -> pint.Quantity:
+    def eval_sigma_t(self, si: SpectralIndex, _=None) -> pint.Quantity:
         """
         Return extinction coefficient at given spectral index.
 

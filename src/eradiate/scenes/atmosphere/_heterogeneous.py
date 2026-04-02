@@ -18,6 +18,7 @@ from ._core import AtmosphericMedium, atmosphere_factory
 from ._homogeneous import HomogeneousAtmosphere
 from ._molecular import MolecularAtmosphere
 from ._particle_field import ParticleField
+from ._homogeneous import HomogeneousAtmosphere
 from ._particle_layer import ParticleLayer
 from ..core import traverse
 from ..phase import Multi3DPhaseFunction, PhaseFunction
@@ -37,6 +38,8 @@ logger = logging.getLogger(__name__)
 
 
 def _molecular_converter(value):
+    if isinstance(value, HomogeneousAtmosphere):
+        return value
     if isinstance(value, cabc.MutableMapping) and ("type" not in value):
         value["type"] = "molecular"
     return atmosphere_factory.convert(value, allowed_cls=MolecularAtmosphere)
@@ -54,6 +57,9 @@ def _particle_layer_converter(value):
         for element in value:
             if isinstance(element, cabc.MutableMapping) and ("type" not in element):
                 element["type"] = "particle_layer"
+            if isinstance(element, HomogeneousAtmosphere):
+                result.append(element)
+                continue
             result.append(
                 atmosphere_factory.convert(element, allowed_cls=ParticleLayer)
             )
