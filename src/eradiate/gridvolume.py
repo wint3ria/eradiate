@@ -137,6 +137,7 @@ def _postprocess_template(
     gridvolume = {
         "type": "gridvolume",
         "grid": DictParameter(partial_factory),
+        "use_grid_bbox": True,
         "filter_type": filter_type_kw,
         "wrap_mode": wrap_mode_kw,
     }
