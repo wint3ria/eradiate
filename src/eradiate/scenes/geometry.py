@@ -199,6 +199,10 @@ class SceneGeometry(ABC):
         """
         pass
 
+    @property
+    def bbox(self):
+        return self.atmosphere_shape.bbox
+
 
 @define
 class PlaneParallelGeometry(SceneGeometry):
