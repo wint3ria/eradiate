@@ -539,54 +539,6 @@ class PlaneParallelGridCoords(GridCoords):
         return n
 
     @classmethod
-    def from_linspace(
-        cls,
-        levels: pint.Quantity,
-        x_start: pint.Quantity,
-        x_stop: pint.Quantity,
-        y_start: pint.Quantity,
-        y_stop: pint.Quantity,
-        n_cells_x: int,
-        n_cells_y: int,
-    ) -> PlaneParallelGridCoords:
-        """
-        Construct from explicit start/stop positions and cell counts.
-
-        This is the most general factory: the caller controls both the domain
-        anchor and the resolution.
-
-        Parameters
-        ----------
-        levels
-            Altitude levels (Z edges).
-        x_start
-            Start position in the X direction.
-        x_stop
-            Stop position in the X direction.
-        y_start
-            Start position in the Y direction.
-        y_stop
-            Stop position in the Y direction.
-        n_cells_x
-            Number of cells in the X direction.
-        n_cells_y
-            Number of cells in the Y direction.
-
-        Returns
-        -------
-        PlaneParallelGridCoords
-        """
-        x_start = ensure_units(x_start, ucc.get("length"))
-        x_stop = ensure_units(x_stop, ucc.get("length"))
-        y_start = ensure_units(y_start, ucc.get("length"))
-        y_stop = ensure_units(y_stop, ucc.get("length"))
-
-        edges_x = np.linspace(x_start, x_stop, n_cells_x + 1)
-        edges_y = np.linspace(y_start, y_stop, n_cells_y + 1)
-
-        return cls(levels=levels, edges_x=edges_x, edges_y=edges_y)
-
-    @classmethod
     def from_extent_and_resolution(
         cls,
         levels: pint.Quantity,
