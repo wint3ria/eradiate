@@ -706,37 +706,37 @@ class AtmosphericMedium(Atmosphere, ABC):
 
         sigma_t_id =  f"{self.id}_sigma_t"
 
+        piecewise = (
+            isinstance(self.geometry, PlaneParallelGeometry)
+            and not self.force_majorant
+            and self.geometry.grid.onedim
+        )
+
         if isinstance(self.geometry, SphericalShellGeometry):
-            medium = "heterogeneous"
-            if self.extremum_resolution != (1, 1, 1):
-            volume_rmin = self.geometry.atmosphere_volume_rmin
-            to_world = self.geometry.atmosphere_volume_to_world
-            extremum = {
-                "type": "extremum_spherical",
-                "volume": {"type": "ref", "id": sigma_t_id},
-                "rmin": volume_rmin,
-                "resolution": self.extremum_resolution,
-                "to_world": to_world,
-            }
-        elif isinstance(self.geometry, PlaneParallelGeometry):
-            to_world = self.geometry.atmosphere_volume_to_world
-            medium = "piecewise"
-            if self.force_majorant:
-                medium = "heterogeneous"
-            if not self.geometry.grid.onedim:
-                medium = "heterogeneous"
-            if medium == "heterogeneous":
-                if self.extremum_resolution != (1, 1, 1):
-                    extremum = {
-                        "type": "extremum_grid",
-                        "volume": {"type": "ref", "id": sigma_t_id},
-                        "resolution": self.extremum_resolution,
-                        "to_world": to_world,
-                    }
+            extr_rmin = dict(rmin=self.geometry.atmosphere_volume_rmin)
         else:
-            raise ValueError(
-                f"unhandled scene geometry type '{type(self.geometry).__name__}'"
-            )
+            extr_rmin = {}
+
+        if piecewise:
+            medium = "piecewise"
+            aabb = {}
+        else:
+            to_world = self.geometry.atmosphere_volume_to_world
+            if self.extremum_resolution != (1, 1, 1):
+                extremum = {
+                    "type": "extremum_spherical",
+                    "volume": {"type": "ref", "id": sigma_t_id},
+                    "resolution": self.extremum_resolution,
+                    "to_world": to_world,
+                    **extr_rmin,
+                }
+            medium = "heterogeneous"
+            aabb_min = self.geometry.bbox.min.m_as("m")
+            # The geometry bbox inserts a sub-surface padding. We want the data to be evaluated
+            # on the entire geometry extent in x and y directions, but we should avoid the wrap_mode
+            # to affect the z direction.
+            aabb_min[2] = self.geometry.grid.levels[0].m_as("m")
+            aabb = {"aabb_min": aabb_min, "aabb_max": self.geometry.bbox.max.m_as("m")}
 
         # Create medium dictionary
         result = {
@@ -746,6 +746,7 @@ class AtmosphericMedium(Atmosphere, ABC):
                 # hack fix by setting to True when we have a piecewise medium
                 (not get_mode().check(mi_color_mode="mono")) or (medium == "piecewise")
             ),
+            **aabb,
             **volumes,
             # Note: "phase" is deliberately unset, this is left to the
             # Atmosphere.template property
