@@ -1,3 +1,4 @@
+from ._cloudfield import CloudField as CloudField
 from ._core import Atmosphere as Atmosphere
 from ._core import AtmosphericMedium as AtmosphericMedium
 from ._core import atmosphere_factory as atmosphere_factory
