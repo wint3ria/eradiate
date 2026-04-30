@@ -111,9 +111,7 @@ class Multi1DPhaseFunction(Abstract1DBlendPhaseFunction):
                 result[f"weight_{i}.volume.grid"] = DictParameter(eval_weights)
                 result[f"weight_{i}.volume.filter_type"] = filter_type
                 result[f"weight_{i}.volume.wrap_mode"] = wrap_mode
-                result[f"weight_{i}.to_world"] = (
-                    self.geometry.atmosphere_volume_to_world
-                )
+                result[f"weight_{i}.to_world"] = self.geometry.grid.to_world
                 result[f"weight_{i}.rmin"] = self.geometry.atmosphere_volume_rmin
 
         return result
@@ -258,9 +256,7 @@ class Multi3DPhaseFunction(Abstract3DBlendPhaseFunction):
                 result[f"weight_{i}.wrap_mode"] = wrap_mode
 
                 if self.geometry is not None:
-                    result[f"weight_{i}.to_world"] = (
-                        self.geometry.atmosphere_volume_to_world
-                    )
+                    result[f"weight_{i}.to_world"] = self.geometry.grid.to_world
 
             elif isinstance(self.geometry, SphericalShellGeometry):
                 # Same comment as above
@@ -272,9 +268,7 @@ class Multi3DPhaseFunction(Abstract3DBlendPhaseFunction):
                 result[f"weight_{i}.volume.grid"] = DictParameter(eval_weights)
                 result[f"weight_{i}.volume.filter_type"] = filter_type
                 result[f"weight_{i}.volume.wrap_mode"] = wrap_mode
-                result[f"weight_{i}.to_world"] = (
-                    self.geometry.atmosphere_volume_to_world
-                )
+                result[f"weight_{i}.to_world"] = self.geometry.grid.to_world
                 result[f"weight_{i}.rmin"] = self.geometry.atmosphere_volume_rmin
 
         return result
