@@ -666,22 +666,28 @@ class AtmosphericMedium(Atmosphere, ABC):
             "sigma_t": sigma_t_grid,
         }
 
-        if isinstance(self.geometry, SphericalShellGeometry):
-            medium = "heterogeneous"
-        elif isinstance(self.geometry, PlaneParallelGeometry):
+        piecewise = (
+            isinstance(self.geometry, PlaneParallelGeometry)
+            and not self.force_majorant
+            and self.geometry.grid.onedim
+        )
+
+        if piecewise:
             medium = "piecewise"
-            if self.force_majorant:
-                medium = "heterogeneous"
-            if not self.geometry.grid.onedim:
-                medium = "heterogeneous"
+            aabb = {}
         else:
-            raise ValueError(
-                f"unhandled scene geometry type '{type(self.geometry).__name__}'"
-            )
+            medium = "heterogeneous"
+            aabb_min = self.geometry.bbox.min.m_as("m")
+            # The geometry bbox inserts a sub-surface padding. We want the data to be evaluated
+            # on the entire geometry extent in x and y directions, but we should avoid the wrap_mode
+            # to affect the z direction.
+            aabb_min[2] = self.geometry.grid.levels[0].m_as("m")
+            aabb = {"aabb_min": aabb_min, "aabb_max": self.geometry.bbox.max.m_as("m")}
 
         # Create medium dictionary
         result = {
             "type": medium,
+            **aabb,
             **volumes,
             # Note: "phase" is deliberately unset, this is left to the
             # Atmosphere.template property
