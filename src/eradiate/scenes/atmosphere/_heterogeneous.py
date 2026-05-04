@@ -5,6 +5,7 @@ Heterogeneous atmospheres.
 from __future__ import annotations
 
 import logging
+import warnings
 from collections import abc as cabc
 from typing import TYPE_CHECKING
 
@@ -14,10 +15,10 @@ import numpy as np
 import pint
 
 from ._core import AtmosphericMedium, atmosphere_factory
-from ._molecular import GriddedMolecularAtmosphere, MolecularAtmosphere
+from ._molecular import MolecularAtmosphere
 from ._particle_layer import ParticleLayer
 from ..core import traverse
-from ..phase import Multi1DPhaseFunction, Multi3DPhaseFunction, PhaseFunction
+from ..phase import Multi3DPhaseFunction, PhaseFunction
 from ...attrs import define, documented
 from ...contexts import KernelContext
 from ...grid import GridCoords
@@ -33,12 +34,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-
 def _molecular_converter(value):
     if isinstance(value, cabc.MutableMapping) and ("type" not in value):
         value["type"] = "molecular"
     return atmosphere_factory.convert(value, allowed_cls=MolecularAtmosphere)
-
 
 def _particle_layer_converter(value):
     if not value:
@@ -59,7 +58,6 @@ def _particle_layer_converter(value):
 
         return result
 
-
 @define(eq=False, slots=False)
 class AbstractHeterogeneousAtmosphere(AtmosphericMedium):
     """
@@ -67,23 +65,22 @@ class AbstractHeterogeneousAtmosphere(AtmosphericMedium):
     """
 
     @property
-    def components(self) -> list[MolecularAtmosphere | ParticleLayer]:
+    def components(self) -> list:
         """
         Returns
         -------
-        list of .AbstractHeterogeneousAtmosphere
+        list
             The list of all registered atmospheric components.
         """
         result = [self.molecular_atmosphere] if self.molecular_atmosphere else []
         result.extend(self.particle_layers)
+        if self.clouds is not None:
+            result.append(self.clouds)
         return result
 
     def update(self):
-        # Inherit docstring
         if not self.components:
             raise ValueError("HeterogeneousAtmosphere must have at least one component")
-
-        # Force component IDs
         for i, component in enumerate(self.components):
             component.update()
             component.id = f"{self.id}_component_{i}"
@@ -95,32 +92,20 @@ class AbstractHeterogeneousAtmosphere(AtmosphericMedium):
             )
             component.geometry = self.geometry
 
-    # --------------------------------------------------------------------------
-    #              Spatial extension and thermophysical properties
-    # --------------------------------------------------------------------------
-
     @property
     def bottom(self) -> pint.Quantity:
-        # Inherit docstring
         return min([component.bottom for component in self.components])
 
     @property
     def top(self) -> pint.Quantity:
-        # Inherit docstring
         return max([component.top for component in self.components])
 
     def eval_mfp(self, ctx: KernelContext) -> pint.Quantity:
-        # Inherit docstring
         mfp = [component.eval_mfp(ctx=ctx) for component in self.components]
         return max(mfp)
 
-    # --------------------------------------------------------------------------
-    #                       Radiative properties
-    # --------------------------------------------------------------------------
-
     @property
     def absorption_data(self) -> AbsorptionDatabase | None:
-        # Inherit docstring
         if self.molecular_atmosphere is not None:
             return self.molecular_atmosphere._absorption_data
         else:
@@ -129,7 +114,6 @@ class AbstractHeterogeneousAtmosphere(AtmosphericMedium):
     def eval_albedo(
         self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
-        # Inherit docstring
         if grid is not None and grid is not self.geometry.grid:
             raise ValueError("grid must be left unset or set to self.geometry.grid")
 
@@ -141,21 +125,13 @@ class AbstractHeterogeneousAtmosphere(AtmosphericMedium):
 
         return albedo * ureg.dimensionless
 
-    # --------------------------------------------------------------------------
-    #                       Kernel dictionary generation
-    # --------------------------------------------------------------------------
-
     @property
     def _template_phase(self) -> dict:
-        # Inherit docstring
         return traverse(self.phase)[0].data
 
     @property
     def _params_phase(self) -> dict:
-        # Inherit docstring
         umap = traverse(self.phase)[1].data
-
-        # Add prefix and lookup strategy to all entries
         result = {}
 
         for uparam_key, uparam in umap.items():
@@ -170,11 +146,14 @@ class AbstractHeterogeneousAtmosphere(AtmosphericMedium):
 
         return result
 
-
 @define(eq=False, slots=False)
 class HeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
     """
     Heterogeneous atmosphere scene element [``heterogeneous``].
+
+    Supports both 1D (plane-parallel, layer-based) and 3D (fully gridded)
+    configurations.  The 3D broadcast path is used when a cloud field is
+    present; otherwise the 1D layer-based path is used.
     """
 
     molecular_atmosphere: MolecularAtmosphere | None = documented(
@@ -229,160 +208,38 @@ class HeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
                 "scaled individually"
             )
 
-    @cache_by_id
-    def _eval_sigma_t_impl(self, si: SpectralIndex) -> pint.Quantity:
-        result = np.zeros((len(self.components), self.geometry.grid.n_layers))
-        sigma_units = ucc.get("collision_coefficient")
-
-        # Evaluate extinction for current component
-        for i, component in enumerate(self.components):
-            result[i] = component.eval_sigma_t(si, self.geometry.grid).m_as(sigma_units)
-
-        return result * sigma_units
-
-    def eval_sigma_t(
-        self, si: SpectralIndex, grid: GridCoords | None = None
-    ) -> pint.Quantity:
-        # Inherit docstring
-        if grid is not None and grid is not self.geometry.grid:
-            raise ValueError("grid must be left unset or set to self.geometry.grid")
-        return self._eval_sigma_t_impl(si).sum(axis=0)
-
-    def eval_sigma_a(
-        self, si: SpectralIndex, grid: GridCoords | None = None
-    ) -> pint.Quantity:
-        # Inherit docstring
-        if grid is not None and grid is not self.geometry.grid:
-            raise ValueError("grid must be left unset or set to self.geometry.grid")
-        return self.eval_sigma_t(si) - self.eval_sigma_s(si)
-
-    @cache_by_id
-    def _eval_sigma_s_impl(self, si: SpectralIndex) -> pint.Quantity:
-        result = np.zeros((len(self.components), self.geometry.grid.n_layers))
-        sigma_units = ucc.get("collision_coefficient")
-
-        # Evaluate scattering coefficient for current component
-        for i, component in enumerate(self.components):
-            result[i] = component.eval_sigma_s(si, self.geometry.grid).m_as(sigma_units)
-
-        return result * sigma_units
-
-    def _eval_sigma_s_component(
-        self, si: SpectralIndex, n_component: int
-    ) -> pint.Quantity:
-        return self._eval_sigma_s_impl(si)[n_component]
-
-    def eval_sigma_s(
-        self, si: SpectralIndex, grid: GridCoords | None = None
-    ) -> pint.Quantity:
-        # Inherit docstring
-        if grid is not None and grid is not self.geometry.grid:
-            raise ValueError("grid must be left unset or set to self.geometry.grid")
-        return self._eval_sigma_s_impl(si).sum(axis=0)
-
-    # --------------------------------------------------------------------------
-    #                       Kernel dictionary generation
-    # --------------------------------------------------------------------------
-
-    @property
-    def phase(self) -> PhaseFunction:
-        # Inherit docstring
-        if len(self.components) == 1:
-            return self.components[0].phase
-
-        else:
-            components, weights = [], []
-            sigma_units = ucc.get("collision_coefficient")
-
-            for i, component in enumerate(self.components):
-                components.append(component.phase)
-
-                def eval_sigma_s(si: SpectralIndex, n_component: int = i) -> np.ndarray:
-                    return self._eval_sigma_s_component(si, n_component).m_as(
-                        sigma_units
-                    )
-
-                weights.append(eval_sigma_s)
-
-            return Multi1DPhaseFunction(
-                components=components, weights=weights, geometry=self.geometry
-            )
-
-
-@define(eq=False, slots=False)
-class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
-    molecular_atmosphere: GriddedMolecularAtmosphere | None = documented(
-        attrs.field(
-            validator=attrs.validators.optional(
-                attrs.validators.instance_of(GriddedMolecularAtmosphere),
-            ),
-            kw_only=True,
-            default=None,
-        ),
-        doc="TBD",
-        type=".GriddedMolecularAtmosphere",
-        init_type=".GriddedMolecularAtmosphere",
+    clouds: AtmosphericMedium | None = documented(
+        attrs.field(default=None, kw_only=True),
+        doc="Optional cloud field component.  When set, the 3D rendering "
+        "path is used unconditionally.",
+        type=".AtmosphericMedium or None",
+        init_type=".AtmosphericMedium or None, optional",
+        default="None",
     )
 
-    @molecular_atmosphere.validator
-    def _molecular_atmosphere_validator(self, attribute, value):
-        if value is None:
-            return
-
-        if value.scale is not None:
-            raise ValueError(
-                f"while validating {attribute.name}: components cannot be "
-                "scaled individually"
-            )
-
-    particle_layers: list[ParticleLayer] = documented(
-        attrs.field(
-            factory=list,
-            converter=_particle_layer_converter,
-            validator=attrs.validators.deep_iterable(
-                attrs.validators.instance_of(ParticleLayer)
-            ),
-            kw_only=True,
-        ),
-        doc="List of particle layers. Elements may be specified as "
-        "dictionaries interpreted by :data:`.atmosphere_factory`; in that "
-        "case, the ``type`` parameter may be omitted and will automatically "
-        'be set to ``"particle_layer"``.',
-        type="list of .ParticleLayer",
-        init_type="list of .ParticleLayer, optional",
-        default="[]",
+    use_mis: bool = documented(
+        attrs.field(default=True, converter=bool, kw_only=True),
+        doc="If ``True``, multiple importance sampling is enabled for the "
+        "3D phase function mixture.",
+        type="bool",
+        init_type="bool",
+        default="True",
     )
-
-    @particle_layers.validator
-    def _particle_layers_validator(self, attribute, value):
-        if not all(component.scale is None for component in value):
-            raise ValueError(
-                f"while validating {attribute.name}: components cannot be "
-                "scaled individually"
-            )
-
-    clouds = attrs.field(kw_only=True)
-    use_mis = attrs.field(kw_only=True, default=True)
-
-    # --------------------------------------------------------------------------
-    #                       Radiative properties
-    # --------------------------------------------------------------------------
 
     @cache_by_id
     def _eval_sigma_t_impl(self, si: SpectralIndex) -> pint.Quantity:
+        sigma_units = ucc.get("collision_coefficient")
         result = []
-
-        # Evaluate scattering coefficient for current component
         for component in self.components:
             cmp_result = component.eval_sigma_t(si, self.geometry.grid)
-            result.append(np.broadcast_to(cmp_result, self.geometry.grid.shape))
-
-        return np.stack(result)
+            result.append(
+                np.broadcast_to(cmp_result.m_as(sigma_units), self.geometry.grid.shape)
+            )
+        return np.stack(result) * sigma_units
 
     def eval_sigma_t(
         self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
-        # Inherit docstring
         if grid is not None and grid is not self.geometry.grid:
             raise ValueError("grid must be left unset or set to self.geometry.grid")
         return self._eval_sigma_t_impl(si).sum(axis=0)
@@ -390,21 +247,20 @@ class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
     def eval_sigma_a(
         self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
-        # Inherit docstring
         if grid is not None and grid is not self.geometry.grid:
             raise ValueError("grid must be left unset or set to self.geometry.grid")
         return self.eval_sigma_t(si) - self.eval_sigma_s(si)
 
     @cache_by_id
     def _eval_sigma_s_impl(self, si: SpectralIndex) -> pint.Quantity:
+        sigma_units = ucc.get("collision_coefficient")
         result = []
-
-        # Evaluate scattering coefficient for current component
         for component in self.components:
             cmp_result = component.eval_sigma_s(si, self.geometry.grid)
-            result.append(np.broadcast_to(cmp_result, self.geometry.grid.shape))
-
-        return np.stack(result)
+            result.append(
+                np.broadcast_to(cmp_result.m_as(sigma_units), self.geometry.grid.shape)
+            )
+        return np.stack(result) * sigma_units
 
     def _eval_sigma_s_component(
         self, si: SpectralIndex, n_component: int
@@ -414,45 +270,50 @@ class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
     def eval_sigma_s(
         self, si: SpectralIndex, grid: GridCoords | None = None
     ) -> pint.Quantity:
-        # Inherit docstring
         if grid is not None and grid is not self.geometry.grid:
             raise ValueError("grid must be left unset or set to self.geometry.grid")
         return self._eval_sigma_s_impl(si).sum(axis=0)
 
-    # --------------------------------------------------------------------------
-    #                       Kernel dictionary generation
-    # --------------------------------------------------------------------------
-
-    @property
-    def components(self):
-        components = super().components
-        if self.clouds:
-            components.append(self.clouds)
-        return components
-
     @property
     def phase(self) -> PhaseFunction:
-        # Inherit docstring
         if len(self.components) == 1:
             return self.components[0].phase
 
-        else:
-            components, weights = [], []
-            sigma_units = ucc.get("collision_coefficient")
+        components, weights = [], []
+        sigma_units = ucc.get("collision_coefficient")
 
-            for i, component in enumerate(self.components):
-                components.append(component.phase)
+        for i, component in enumerate(self.components):
+            components.append(component.phase)
 
-                def eval_sigma_s(si: SpectralIndex, n_component: int = i) -> np.ndarray:
-                    return self._eval_sigma_s_component(si, n_component).m_as(
-                        sigma_units
-                    )
+            def eval_sigma_s(si: SpectralIndex, n_component: int = i) -> np.ndarray:
+                return self._eval_sigma_s_component(si, n_component).m_as(sigma_units)
 
-                weights.append(eval_sigma_s)
+            weights.append(eval_sigma_s)
 
-            return Multi3DPhaseFunction(
-                components=components,
-                weights=weights,
-                geometry=self.geometry,
-                use_mis=self.use_mis,
-            )
+        return Multi3DPhaseFunction(
+            components=components,
+            weights=weights,
+            geometry=self.geometry,
+            use_mis=self.use_mis,
+        )
+
+@define(eq=False, slots=False)
+class GriddedHeterogeneousAtmosphere(HeterogeneousAtmosphere):
+    """
+    Deprecated. Use :class:`.HeterogeneousAtmosphere` directly.
+
+    .. deprecated::
+        :class:`GriddedHeterogeneousAtmosphere` is a no-op alias kept for
+        backwards compatibility.  All functionality has been merged into
+        :class:`.HeterogeneousAtmosphere`.
+    """
+
+    def __attrs_post_init__(self):
+        warnings.warn(
+            "GriddedHeterogeneousAtmosphere is deprecated and will be removed. "
+            "Use HeterogeneousAtmosphere directly.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if hasattr(super(), "__attrs_post_init__"):
+            super().__attrs_post_init__()
