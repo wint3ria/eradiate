@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Callable, Literal, Union
 
 import attrs
@@ -13,6 +14,7 @@ from ...attrs import define, documented
 from ...kernel import DictParameter, KernelSceneParameterFlags, SceneParameter
 from ...util.misc import cache_by_id
 from ...units import unit_registry as ureg
+
 
 def format_cloudparticles_dataset(
     iprt_ds: xr.Dataset,
@@ -48,8 +50,8 @@ def format_cloudparticles_dataset(
     Returns
     -------
     xr.Dataset
-        Dataset with coordinates ``w``, ``r_eff``, ``v_eff``, ``i``, ``j``,
-        and ``rho``; and data variables ``theta_native``, ``phase_native``,
+        Dataset with coordinates ``w``, ``r_eff``, ``v_eff``, ``rho``, and
+        ``alpha``; and data variables ``theta_native``, ``phase_native``,
         ``start``, ``n_pts``, ``m_extinction``, and ``albedo``.
 
     Raises
@@ -63,37 +65,37 @@ def format_cloudparticles_dataset(
     ntheta = len(iprt_ds.nthetamax)
     E = nlam * nreff * nveff
 
-    phase_raw = iprt_ds.phase.values  # (nlam, nreff, nveff, nphamat, ntheta)
-    phase_np = np.zeros((nlam, nreff, nveff, 4, 4, ntheta))
+    phase_raw = iprt_ds.phase.values  # (nlam, nreff, 4, ntheta)
+    phase_np = np.zeros((nlam, nreff, 4, 4, ntheta))
 
     if particle_shape == "spherical":
         for k in range(nlam):
-            phase_np[k, :, :, 0, 0, :] = phase_raw[k, :, :, 0]
-            phase_np[k, :, :, 1, 1, :] = phase_raw[k, :, :, 0]
-            phase_np[k, :, :, 0, 1, :] = phase_raw[k, :, :, 1]
-            phase_np[k, :, :, 1, 0, :] = phase_raw[k, :, :, 1]
-            phase_np[k, :, :, 2, 2, :] = phase_raw[k, :, :, 2]
-            phase_np[k, :, :, 3, 3, :] = phase_raw[k, :, :, 2]
-            phase_np[k, :, :, 2, 3, :] = phase_raw[k, :, :, 3]
-            phase_np[k, :, :, 3, 2, :] = phase_raw[k, :, :, 3]
+            phase_np[k, :, 0, 0, :] = phase_raw[k, :, 0]
+            phase_np[k, :, 1, 1, :] = phase_raw[k, :, 0]
+            phase_np[k, :, 0, 1, :] = phase_raw[k, :, 1]
+            phase_np[k, :, 1, 0, :] = phase_raw[k, :, 1]
+            phase_np[k, :, 2, 2, :] = phase_raw[k, :, 2]
+            phase_np[k, :, 3, 3, :] = phase_raw[k, :, 2]
+            phase_np[k, :, 2, 3, :] = phase_raw[k, :, 3]
+            phase_np[k, :, 3, 2, :] = phase_raw[k, :, 3]
     elif particle_shape == "spheroidal":
         for k in range(nlam):
-            phase_np[k, :, :, 0, 0, :] = phase_raw[k, :, :, 0]
-            phase_np[k, :, :, 0, 1, :] = phase_raw[k, :, :, 1]
-            phase_np[k, :, :, 1, 0, :] = phase_raw[k, :, :, 1]
-            phase_np[k, :, :, 1, 1, :] = phase_raw[k, :, :, 4]
-            phase_np[k, :, :, 2, 2, :] = phase_raw[k, :, :, 2]
-            phase_np[k, :, :, 2, 3, :] = phase_raw[k, :, :, 3]
-            phase_np[k, :, :, 3, 2, :] = phase_raw[k, :, :, 3]
-            phase_np[k, :, :, 3, 3, :] = phase_raw[k, :, :, 5]
+            phase_np[k, :, 0, 0, :] = phase_raw[k, :, 0]
+            phase_np[k, :, 0, 1, :] = phase_raw[k, :, 1]
+            phase_np[k, :, 1, 0, :] = phase_raw[k, :, 1]
+            phase_np[k, :, 1, 1, :] = phase_raw[k, :, 4]
+            phase_np[k, :, 2, 2, :] = phase_raw[k, :, 2]
+            phase_np[k, :, 2, 3, :] = phase_raw[k, :, 3]
+            phase_np[k, :, 3, 2, :] = phase_raw[k, :, 3]
+            phase_np[k, :, 3, 3, :] = phase_raw[k, :, 5]
     else:
         raise NotImplementedError(
             f"Particle shape '{particle_shape}' is not implemented. "
             "Use 'spherical' or 'spheroidal'."
         )
 
-    theta_raw = iprt_ds.theta.isel(nphamat=0).values  # (nlam, nreff, nveff, ntheta)
-    phase_4d = phase_np  # (nlam, nreff, nveff, 4, 4, ntheta)
+    theta_raw = iprt_ds.theta.isel(nphamat=0).values.reshape(nlam, nreff, nveff, ntheta)
+    phase_4d = phase_np.reshape(nlam, nreff, nveff, 4, 4, ntheta)
 
     theta_flat = theta_raw.reshape(E, ntheta)
     phase_flat = phase_4d.reshape(E, 16, ntheta)
@@ -115,7 +117,7 @@ def format_cloudparticles_dataset(
         sidx = np.argsort(theta_flat[e, valid_idx])
         sorted_idx = valid_idx[sidx]
         theta_native[s : s + nc] = theta_flat[e, sorted_idx]
-        phase_native[s : s + nc, :] = phase_flat[e][:, sorted_idx].T
+        phase_native[s : s + nc, :] = phase_flat[e, :, sorted_idx]
 
     start = start_flat.reshape(nlam, nreff, nveff).astype(np.int64)
     n_pts = valid_counts.reshape(nlam, nreff, nveff).astype(np.int32)
@@ -140,7 +142,7 @@ def format_cloudparticles_dataset(
             i=(["i"], list(range(4))),
             j=(["j"], list(range(4))),
             rho=(["rho"], [1.0], {"long_name": "density", "units": "g/cm^3"}),
-            alpha=(["v_eff"], np.full(nveff, 2.0)),
+            alpha=(["v_eff"], [2.0]),
         ),
         data_vars=dict(
             theta_native=(["total_pts"], theta_native),
@@ -157,6 +159,7 @@ def format_cloudparticles_dataset(
             ),
         ),
     ).squeeze(dim="rho")
+
 
 def _w_brackets(
     w_axis: np.ndarray, wavelengths: np.ndarray
@@ -194,6 +197,7 @@ def _w_brackets(
     cw_flat = np.stack([1 - tw, tw], axis=1).ravel()
     return w_flat, cw_flat
 
+
 def _corners_on_union(
     corner_thetas: list[np.ndarray],
     corner_phases: list[np.ndarray],
@@ -224,9 +228,7 @@ def _corners_on_union(
     ndarray, shape (n_corners, 16, n_union)
         Phase matrix values for every corner evaluated on *union_theta*.
     """
-    out = np.empty(
-        (len(corner_thetas), 16, len(union_theta)), dtype=np.float32
-    )
+    out = np.empty((len(corner_thetas), 16, len(union_theta)), dtype=np.float32)
     for ci, (th, ph) in enumerate(zip(corner_thetas, corner_phases)):
         il = np.clip(
             np.searchsorted(th, union_theta, side="right") - 1, 0, len(th) - 2
@@ -236,6 +238,7 @@ def _corners_on_union(
         t = (union_theta - th[il]) / denom
         out[ci] = (ph[il] * (1 - t[:, None]) + ph[iu] * t[:, None]).T
     return out
+
 
 def _gather_corners(
     w_flat: np.ndarray,
@@ -293,6 +296,7 @@ def _gather_corners(
                 corner_thetas.append(theta_native[s : s + nc])
                 corner_phases.append(phase_native[s : s + nc])
     return corner_thetas, corner_phases
+
 
 def _interp_trilinear(
     ds: xr.Dataset,
@@ -379,8 +383,8 @@ def _interp_trilinear(
     tv = np.divide(
         v_eff_all - v_axis[il_v], denom_v, out=np.zeros(N), where=denom_v != 0.0
     )
-    wr = np.stack([1 - tr, tr], axis=1)  # (N, 2)
-    wv = np.stack([1 - tv, tv], axis=1)  # (N, 2)
+    wr = np.stack([1 - tr, tr], axis=1)
+    wv = np.stack([1 - tv, tv], axis=1)
 
     bracket_key = il_r * nveff + il_v
     sort_idx = np.argsort(bracket_key, kind="stable")
@@ -392,8 +396,8 @@ def _interp_trilinear(
     mext_out = np.empty((N, n_wav))
     alb_out = np.empty((N, n_wav))
 
-    group_wav_grids = []   # list[list[ndarray]]  — [n_groups][n_wav]
-    group_wav_phases = []  # list[tuple[rows, list[ndarray(rows, 4, 4, n_union)]]]
+    group_wav_grids = []
+    group_wav_phases = []
     group_rows_list = []
 
     for gs, ge in zip(group_starts, group_ends):
@@ -421,9 +425,7 @@ def _interp_trilinear(
             )
             union_theta_k = np.unique(np.concatenate(ct_k))
             wav_union_thetas.append(union_theta_k)
-            wav_corners_reg.append(
-                _corners_on_union(ct_k, cp_k, union_theta_k)  # (8, 16, n_union_k)
-            )
+            wav_corners_reg.append(_corners_on_union(ct_k, cp_k, union_theta_k))
 
         group_phase_wav = [
             np.empty((len(rows), 4, 4, len(wav_union_thetas[k])))
@@ -434,8 +436,8 @@ def _interp_trilinear(
             idx = rows[b : b + batch_size]
             B = len(idx)
 
-            cr_b = wr[idx]  # (B, 2)
-            cv_b = wv[idx]  # (B, 2)
+            cr_b = wr[idx]
+            cv_b = wv[idx]
 
             for k in range(n_wav):
                 cw_k = cw_flat[2 * k : 2 * k + 2]
@@ -489,13 +491,14 @@ def _interp_trilinear(
         for k in range(n_wav):
             gtheta = wav_grids[k]
             n_union = len(gtheta)
-            gph_k = gph_wav[k]  # (len(rows), 4, 4, n_union)
+            gph_k = gph_wav[k]
             for local_i, row in enumerate(rows):
                 s = int(grid_start[row, k])
                 theta[s : s + n_union] = gtheta
                 phase[s : s + n_union] = gph_k[local_i].reshape(16, n_union).T
 
     return grid_start, grid_len, theta, phase, mext_out, alb_out
+
 
 def _interp_nearest_rv_linear_w(
     ds: xr.Dataset,
@@ -518,8 +521,6 @@ def _interp_nearest_rv_linear_w(
     phase data in the contiguous store, referenced by identical
     ``grid_start`` / ``grid_len`` values.
 
-    Simpler and faster than :func:`_interp_trilinear`; useful for diagnostic
-    purposes or coarse grids where trilinear accuracy is not required.
     The ``_rv`` suffix signals nearest-neighbour in ``(r_eff, v_eff)``;
     ``_linear_w`` signals that the wavelength dimension is still linearly
     interpolated.
@@ -595,9 +596,9 @@ def _interp_nearest_rv_linear_w(
                 ds.phase_native.values,
             )
             union_theta_k = np.unique(np.concatenate(ct_k))
-            reg_k = _corners_on_union(ct_k, cp_k, union_theta_k)  # (2, 16, n_union_k)
+            reg_k = _corners_on_union(ct_k, cp_k, union_theta_k)
 
-            phase_k = cw_k[0] * reg_k[0] + cw_k[1] * reg_k[1]  # (16, n_union_k)
+            phase_k = cw_k[0] * reg_k[0] + cw_k[1] * reg_k[1]
             phase_k = phase_k.reshape(4, 4, len(union_theta_k))
             phase_k[0, 0, :] = np.maximum(phase_k[0, 0, :], 0.0)
 
@@ -647,6 +648,7 @@ def _interp_nearest_rv_linear_w(
         grid_len[rows] = canon_lens[g]
 
     return grid_start, grid_len, theta, phase, mext_out, alb_out
+
 
 def interpolate_cloudparticles_profile(
     ds: xr.Dataset,
@@ -717,18 +719,8 @@ def interpolate_cloudparticles_profile(
         Cloud-particle dataset as returned by
         :func:`format_cloudparticles_dataset`.
     cumulus_profile : xr.Dataset
-        Dataset describing the microphysical state of *N* cloud elements.
-        Must contain the following 1-D variables, all of length *N*:
-
-        ``r_eff`` : float, units matching ``ds.r_eff`` (micron)
-            Effective radius of the size distribution for each element.
-        ``v_eff`` : float, units matching ``ds.v_eff`` (micron²)
-            Effective variance of the size distribution for each element.
-
-        The integer coordinate ``index`` (0 … N-1) labels entries in the
-        output dataset.  No particular ordering is required; entries outside
-        the convex hull of the ``(r_eff, v_eff)`` grid are clamped to the
-        nearest boundary.
+        Dataset with ``r_eff`` and ``v_eff`` arrays of length *N* describing
+        the microphysical state of each cloud element to interpolate.
     wavelengths : :class:`pint.Quantity`
         Query wavelengths.  Must be convertible to the unit stored in
         ``ds.w.attrs["units"]``.
@@ -752,7 +744,7 @@ def interpolate_cloudparticles_profile(
     Raises
     ------
     ValueError
-        If *rv_mode* is not "trilinear" or "nearest_rv_linear_w".
+        If *rv_mode* is not ``"trilinear"`` or ``"nearest_rv_linear_w"``.
     """
     wavelengths = np.atleast_1d(wavelengths)
     n_wav = len(wavelengths)
@@ -796,6 +788,13 @@ def interpolate_cloudparticles_profile(
         ),
     )
 
+
+def _validate_particle_shape(instance, attribute, value):
+    if value not in ("spherical", "spheroidal"):
+        raise NotImplementedError(
+            f"Particle shape '{value}' is not supported. "
+            "Use 'spherical' or 'spheroidal'."
+        )
 
 
 @define(eq=False, slots=False)
@@ -869,6 +868,7 @@ class CloudPhaseFunction(PhaseFunction):
         init_type='{"spherical", "spheroidal"}',
         default='"spherical"',
     )
+
     def _resolve_dataset(self, ctx: object) -> xr.Dataset:
         """
         Return the cloud-properties dataset for the current rendering context,
@@ -942,15 +942,16 @@ class CloudPhaseFunction(PhaseFunction):
 
         nodes = np.cos(np.deg2rad(180.0 - ds.theta.values)).astype(np.float32)
 
-        grid_start = ds.grid_start.values[:, 0].astype(np.int32)
-        grid_len = ds.grid_len.values[:, 0].astype(np.int32)
+        w_idx = 0
+        grid_start = ds.grid_start.values[:, w_idx].astype(np.int32)
+        grid_len = ds.grid_len.values[:, w_idx].astype(np.int32)
 
         return {
             "n_entries": int(len(grid_start)),
             "nodes": dr.scalar.ArrayXf64(nodes),
             "phase_mueller": dr.scalar.ArrayXf64(mueller),
-            "grid_start": dr.scalar.ArrayXi(grid_start),
-            "grid_len": dr.scalar.ArrayXi(grid_len),
+            "grid_start": dr.scalar.ArrayXu(grid_start),
+            "grid_len": dr.scalar.ArrayXu(grid_len),
         }
 
     @property
