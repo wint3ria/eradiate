@@ -374,7 +374,8 @@ class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
 
         # Evaluate scattering coefficient for current component
         for component in self.components:
-            result.append(component.eval_sigma_t(si, self.geometry.grid))
+            cmp_result = component.eval_sigma_t(si, self.geometry.grid)
+            result.append(np.broadcast_to(cmp_result, self.geometry.grid.shape))
 
         return np.stack(result)
 
@@ -400,7 +401,8 @@ class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
 
         # Evaluate scattering coefficient for current component
         for component in self.components:
-            result.append(component.eval_sigma_s(si, self.geometry.grid))
+            cmp_result = component.eval_sigma_s(si, self.geometry.grid)
+            result.append(np.broadcast_to(cmp_result, self.geometry.grid.shape))
 
         return np.stack(result)
 
