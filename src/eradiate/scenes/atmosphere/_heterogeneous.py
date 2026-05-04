@@ -357,6 +357,9 @@ class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
                 "scaled individually"
             )
 
+    clouds = attrs.field(kw_only=True)
+    use_mis = attrs.field(kw_only=True, default=True)
+
     # --------------------------------------------------------------------------
     #                       Radiative properties
     # --------------------------------------------------------------------------
@@ -415,6 +418,13 @@ class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
     # --------------------------------------------------------------------------
 
     @property
+    def components(self):
+        components = super().components
+        if self.clouds:
+            components.append(self.clouds)
+        return components
+
+    @property
     def phase(self) -> PhaseFunction:
         # Inherit docstring
         if len(self.components) == 1:
@@ -435,5 +445,8 @@ class GriddedHeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
                 weights.append(eval_sigma_s)
 
             return Multi3DPhaseFunction(
-                components=components, weights=weights, geometry=self.geometry
+                components=components,
+                weights=weights,
+                geometry=self.geometry,
+                use_mis=self.use_mis,
             )
