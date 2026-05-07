@@ -420,46 +420,6 @@ class ParticleLayer(AtmosphericMedium):
         default='"uniform"',
     )
 
-    @property
-    def distribution_z(self):
-        return self.distribution
-
-    distribution_y: ParticleDistribution = documented(
-        attrs.field(
-            default="uniform",
-            converter=_particle_layer_distribution_converter,
-            validator=attrs.validators.instance_of(ParticleDistribution),
-        ),
-        doc="Particle distribution in the Y dimension of the coords grid. "
-        "Simple defaults can be set using a string: "
-        '``"uniform"`` (resp. ``"gaussian"``, ``"exponential"``) is converted to '
-        ":class:`UniformParticleDistribution() <.UniformParticleDistribution>` "
-        "(resp. :class:`GaussianParticleDistribution() <.GaussianParticleDistribution>`, "
-        ":class:`ExponentialParticleDistribution() <.ExponentialParticleDistribution>`).",
-        init_type=":class:`.ParticleDistribution` or dict or "
-        '{"uniform", "gaussian", "exponential"}, optional',
-        type=":class:`.ParticleDistribution`",
-        default='"uniform"',
-    )
-
-    distribution_x: ParticleDistribution = documented(
-        attrs.field(
-            default="uniform",
-            converter=_particle_layer_distribution_converter,
-            validator=attrs.validators.instance_of(ParticleDistribution),
-        ),
-        doc="Particle distribution in the X dimension of the coords grid. "
-        "Simple defaults can be set using a string: "
-        '``"uniform"`` (resp. ``"gaussian"``, ``"exponential"``) is converted to '
-        ":class:`UniformParticleDistribution() <.UniformParticleDistribution>` "
-        "(resp. :class:`GaussianParticleDistribution() <.GaussianParticleDistribution>`, "
-        ":class:`ExponentialParticleDistribution() <.ExponentialParticleDistribution>`).",
-        init_type=":class:`.ParticleDistribution` or dict or "
-        '{"uniform", "gaussian", "exponential"}, optional',
-        type=":class:`.ParticleDistribution`",
-        default='"uniform"',
-    )
-
     w_ref: pint.Quantity = documented(
         pinttr.field(
             units=ucc.deferred("wavelength"),
@@ -643,25 +603,11 @@ class ParticleLayer(AtmosphericMedium):
         if x.squeeze().ndim > 1 or y.squeeze().ndim > 1:
             raise ValueError("Multidimensional horizontal extents are not supported")
 
-        fractions_x = self.distribution_x(x.m_as(ureg.dimensionless))
-        fractions_y = self.distribution_y(y.m_as(ureg.dimensionless))
-        fractions_z = self.distribution_z(z.m_as(ureg.dimensionless))
+        fractions = self.distribution(z.m_as(ureg.dimensionless))
 
-        # x and y fractions must be 1D.
-        # z fractions are broadcastable to the grid shape.
-        fractions_xy = fractions_x.reshape(-1, 1) @ fractions_y.reshape(1, -1)
-        fractions_xyz = (
-            fractions_xy.reshape(
-                np.atleast_1d(x.squeeze()).shape[0],
-                np.atleast_1d(y.squeeze()).shape[0],
-                1,
-            )
-            * fractions_z
-        )
-
-        out = np.zeros(fractions_xyz.T.shape)
-        fractions_sum = fractions_xyz.sum(axis=-1).T
-        np.divide(fractions_xyz.T, fractions_sum, out=out, where=fractions_sum > 0.0)
+        out = np.zeros(fractions.shape)
+        fractions_sum = fractions.sum(axis=-1).T
+        res = np.divide(fractions.T, fractions_sum, out=out, where=fractions_sum > 0.0)
 
         return out.T
 
