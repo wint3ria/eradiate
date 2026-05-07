@@ -5,7 +5,6 @@ Heterogeneous atmospheres.
 from __future__ import annotations
 
 import logging
-import warnings
 from collections import abc as cabc
 
 import attrs
@@ -13,7 +12,9 @@ import mitsuba as mi
 import numpy as np
 import pint
 
+from ._cloudfield import CloudField
 from ._core import AtmosphericMedium, atmosphere_factory
+from ._homogeneous import HomogeneousAtmosphere
 from ._molecular import MolecularAtmosphere
 from ._particle_layer import ParticleLayer
 from ..core import traverse
@@ -30,10 +31,12 @@ from ...util.misc import cache_by_id
 
 logger = logging.getLogger(__name__)
 
+
 def _molecular_converter(value):
     if isinstance(value, cabc.MutableMapping) and ("type" not in value):
         value["type"] = "molecular"
     return atmosphere_factory.convert(value, allowed_cls=MolecularAtmosphere)
+
 
 def _particle_layer_converter(value):
     if not value:
@@ -54,11 +57,84 @@ def _particle_layer_converter(value):
 
         return result
 
+
 @define(eq=False, slots=False)
-class AbstractHeterogeneousAtmosphere(AtmosphericMedium):
+class HeterogeneousAtmosphere(AtmosphericMedium):
     """
-    Abstract base class for heterogeneous atmospheres
+    Heterogeneous atmosphere scene element [``heterogeneous``].
+
+    Supports both 1D (plane-parallel, layer-based) and 3D (fully gridded)
+    configurations.
     """
+
+    molecular_atmosphere: MolecularAtmosphere | None = documented(
+        attrs.field(
+            default=None,
+            converter=attrs.converters.optional(_molecular_converter),
+            validator=attrs.validators.optional(
+                attrs.validators.instance_of(MolecularAtmosphere)
+            ),
+        ),
+        doc="Molecular atmosphere. May be specified as a dictionary interpreted "
+        'by :data:`.atmosphere_factory`; in that case, the ``"type"`` parameter '
+        'may be omitted and will automatically be set to ``"molecular"``.',
+        type=".MolecularAtmosphere or None",
+        init_type=".MolecularAtmosphere or dict, optional",
+        default="None",
+    )
+
+    @molecular_atmosphere.validator
+    def _molecular_atmosphere_validator(self, attribute, value):
+        if value is None:
+            return
+
+        if value.scale is not None:
+            raise ValueError(
+                f"while validating {attribute.name}: components cannot be "
+                "scaled individually"
+            )
+
+    particle_layers: list[ParticleLayer] = documented(
+        attrs.field(
+            factory=list,
+            converter=_particle_layer_converter,
+            validator=attrs.validators.deep_iterable(
+                attrs.validators.instance_of(ParticleLayer)
+            ),
+        ),
+        doc="List of particle layers. Elements may be specified as "
+        "dictionaries interpreted by :data:`.atmosphere_factory`; in that "
+        "case, the ``type`` parameter may be omitted and will automatically "
+        'be set to ``"particle_layer"``.',
+        type="list of .ParticleLayer",
+        init_type="list of .ParticleLayer, optional",
+        default="[]",
+    )
+
+    @particle_layers.validator
+    def _particle_layers_validator(self, attribute, value):
+        if not all(component.scale is None for component in value):
+            raise ValueError(
+                f"while validating {attribute.name}: components cannot be "
+                "scaled individually"
+            )
+
+    clouds: CloudField | None = documented(
+        attrs.field(default=None, kw_only=True),
+        doc="Optional cloud field component.",
+        type=".CloudField or None",
+        init_type=".CloudField or None, optional",
+        default="None",
+    )
+
+    use_mis: bool = documented(
+        attrs.field(default=True, converter=bool, kw_only=True),
+        doc="If ``True``, multiple importance sampling is enabled for the "
+        "3D phase function mixture.",
+        type="bool",
+        init_type="bool",
+        default="True",
+    )
 
     @property
     def components(self) -> list:
@@ -142,86 +218,6 @@ class AbstractHeterogeneousAtmosphere(AtmosphericMedium):
 
         return result
 
-@define(eq=False, slots=False)
-class HeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
-    """
-    Heterogeneous atmosphere scene element [``heterogeneous``].
-
-    Supports both 1D (plane-parallel, layer-based) and 3D (fully gridded)
-    configurations.  The 3D broadcast path is used when a cloud field is
-    present; otherwise the 1D layer-based path is used.
-    """
-
-    molecular_atmosphere: MolecularAtmosphere | None = documented(
-        attrs.field(
-            default=None,
-            converter=attrs.converters.optional(_molecular_converter),
-            validator=attrs.validators.optional(
-                attrs.validators.instance_of(MolecularAtmosphere)
-            ),
-        ),
-        doc="Molecular atmosphere. May be specified as a dictionary interpreted "
-        'by :data:`.atmosphere_factory`; in that case, the ``"type"`` parameter '
-        'may be omitted and will automatically be set to ``"molecular"``.',
-        type=".MolecularAtmosphere or None",
-        init_type=".MolecularAtmosphere or dict, optional",
-        default="None",
-    )
-
-    @molecular_atmosphere.validator
-    def _molecular_atmosphere_validator(self, attribute, value):
-        if value is None:
-            return
-
-        if value.scale is not None:
-            raise ValueError(
-                f"while validating {attribute.name}: components cannot be "
-                "scaled individually"
-            )
-
-    particle_layers: list[ParticleLayer] = documented(
-        attrs.field(
-            factory=list,
-            converter=_particle_layer_converter,
-            validator=attrs.validators.deep_iterable(
-                attrs.validators.instance_of(ParticleLayer)
-            ),
-        ),
-        doc="List of particle layers. Elements may be specified as "
-        "dictionaries interpreted by :data:`.atmosphere_factory`; in that "
-        "case, the ``type`` parameter may be omitted and will automatically "
-        'be set to ``"particle_layer"``.',
-        type="list of .ParticleLayer",
-        init_type="list of .ParticleLayer, optional",
-        default="[]",
-    )
-
-    @particle_layers.validator
-    def _particle_layers_validator(self, attribute, value):
-        if not all(component.scale is None for component in value):
-            raise ValueError(
-                f"while validating {attribute.name}: components cannot be "
-                "scaled individually"
-            )
-
-    clouds: AtmosphericMedium | None = documented(
-        attrs.field(default=None, kw_only=True),
-        doc="Optional cloud field component.  When set, the 3D rendering "
-        "path is used unconditionally.",
-        type=".AtmosphericMedium or None",
-        init_type=".AtmosphericMedium or None, optional",
-        default="None",
-    )
-
-    use_mis: bool = documented(
-        attrs.field(default=True, converter=bool, kw_only=True),
-        doc="If ``True``, multiple importance sampling is enabled for the "
-        "3D phase function mixture.",
-        type="bool",
-        init_type="bool",
-        default="True",
-    )
-
     @cache_by_id
     def _eval_sigma_t_impl(self, si: SpectralIndex) -> pint.Quantity:
         sigma_units = ucc.get("collision_coefficient")
@@ -292,24 +288,3 @@ class HeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
             geometry=self.geometry,
             use_mis=self.use_mis,
         )
-
-@define(eq=False, slots=False)
-class GriddedHeterogeneousAtmosphere(HeterogeneousAtmosphere):
-    """
-    Deprecated. Use :class:`.HeterogeneousAtmosphere` directly.
-
-    .. deprecated::
-        :class:`GriddedHeterogeneousAtmosphere` is a no-op alias kept for
-        backwards compatibility.  All functionality has been merged into
-        :class:`.HeterogeneousAtmosphere`.
-    """
-
-    def __attrs_post_init__(self):
-        warnings.warn(
-            "GriddedHeterogeneousAtmosphere is deprecated and will be removed. "
-            "Use HeterogeneousAtmosphere directly.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        if hasattr(super(), "__attrs_post_init__"):
-            super().__attrs_post_init__()
