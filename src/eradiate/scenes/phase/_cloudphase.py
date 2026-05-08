@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Callable, Literal, Union
 
 import attrs
@@ -12,8 +11,8 @@ import xarray as xr
 from ._core import PhaseFunction
 from ...attrs import define, documented
 from ...kernel import DictParameter, KernelSceneParameterFlags, SceneParameter
-from ...util.misc import cache_by_id
 from ...units import unit_registry as ureg
+from ...util.misc import cache_by_id
 
 
 def format_cloudparticles_dataset(
@@ -152,10 +151,12 @@ def format_cloudparticles_dataset(
             m_extinction=(
                 ["w", "r_eff", "v_eff"],
                 iprt_ds.ext.values.reshape(nlam, nreff, nveff),
+                iprt_ds.ext.attrs,
             ),
             albedo=(
                 ["w", "r_eff", "v_eff"],
                 iprt_ds.ssa.values.reshape(nlam, nreff, nveff),
+                iprt_ds.ssa.attrs,
             ),
         ),
     ).squeeze(dim="rho")
@@ -230,9 +231,7 @@ def _corners_on_union(
     """
     out = np.empty((len(corner_thetas), 16, len(union_theta)), dtype=np.float32)
     for ci, (th, ph) in enumerate(zip(corner_thetas, corner_phases)):
-        il = np.clip(
-            np.searchsorted(th, union_theta, side="right") - 1, 0, len(th) - 2
-        )
+        il = np.clip(np.searchsorted(th, union_theta, side="right") - 1, 0, len(th) - 2)
         iu = il + 1
         denom = np.where(th[iu] == th[il], 1.0, th[iu] - th[il])
         t = (union_theta - th[il]) / denom
@@ -428,8 +427,7 @@ def _interp_trilinear(
             wav_corners_reg.append(_corners_on_union(ct_k, cp_k, union_theta_k))
 
         group_phase_wav = [
-            np.empty((len(rows), 4, 4, len(wav_union_thetas[k])))
-            for k in range(n_wav)
+            np.empty((len(rows), 4, 4, len(wav_union_thetas[k]))) for k in range(n_wav)
         ]
 
         for b in range(0, len(rows), batch_size):
@@ -464,8 +462,8 @@ def _interp_trilinear(
                 )
 
                 W_flat_k = W_k.reshape(B, 8)
-                group_phase_wav[k][b : b + B] = (
-                    (W_flat_k @ cp_mat_k).reshape(B, 4, 4, n_union_k)
+                group_phase_wav[k][b : b + B] = (W_flat_k @ cp_mat_k).reshape(
+                    B, 4, 4, n_union_k
                 )
 
         for k in range(n_wav):
@@ -604,7 +602,9 @@ def _interp_nearest_rv_linear_w(
 
             corners_mext_k = ds.m_extinction.values[wf_k, ir, iv]
             corners_alb_k = ds.albedo.values[wf_k, ir, iv]
-            mext_out[rows, k] = cw_k[0] * corners_mext_k[0] + cw_k[1] * corners_mext_k[1]
+            mext_out[rows, k] = (
+                cw_k[0] * corners_mext_k[0] + cw_k[1] * corners_mext_k[1]
+            )
             alb_out[rows, k] = cw_k[0] * corners_alb_k[0] + cw_k[1] * corners_alb_k[1]
 
             wav_union_thetas.append(union_theta_k)
@@ -616,10 +616,7 @@ def _interp_nearest_rv_linear_w(
 
     n_groups = len(group_wav_grids)
     canon_lens = np.array(
-        [
-            [len(group_wav_grids[g][k]) for k in range(n_wav)]
-            for g in range(n_groups)
-        ],
+        [[len(group_wav_grids[g][k]) for k in range(n_wav)] for g in range(n_groups)],
         dtype=np.int32,
     )
     canon_flat = canon_lens.ravel()
@@ -631,9 +628,7 @@ def _interp_nearest_rv_linear_w(
     theta = np.empty(total_pts, dtype=np.float64)
     phase = np.empty((total_pts, 16), dtype=np.float32)
 
-    for g, (wav_grids, wav_phases) in enumerate(
-        zip(group_wav_grids, group_wav_phases)
-    ):
+    for g, (wav_grids, wav_phases) in enumerate(zip(group_wav_grids, group_wav_phases)):
         for k in range(n_wav):
             s = int(canon_starts[g, k])
             gtheta = wav_grids[k]
@@ -652,7 +647,7 @@ def _interp_nearest_rv_linear_w(
 
 def interpolate_cloudparticles_profile(
     ds: xr.Dataset,
-    cumulus_profile: xr.Dataset,
+    profile: xr.Dataset,
     wavelengths,
     batch_size: int = 16,
     rv_mode: Literal["trilinear", "nearest_rv_linear_w"] = "trilinear",
@@ -661,7 +656,7 @@ def interpolate_cloudparticles_profile(
     Interpolate a cloud-particle dataset onto a set of ``(r_eff, v_eff)``
     entries and query wavelengths.
 
-    Each entry in *cumulus_profile* describes the microphysical state of one
+    Each entry in *profile* describes the microphysical state of one
     cloud element (e.g. a layer or a voxel) via its effective radius
     ``r_eff`` and effective variance ``v_eff``.  For every such entry and
     every query wavelength, this function produces the interpolated phase
@@ -718,7 +713,7 @@ def interpolate_cloudparticles_profile(
     ds : xr.Dataset
         Cloud-particle dataset as returned by
         :func:`format_cloudparticles_dataset`.
-    cumulus_profile : xr.Dataset
+    profile : xr.Dataset
         Dataset with ``r_eff`` and ``v_eff`` arrays of length *N* describing
         the microphysical state of each cloud element to interpolate.
     wavelengths : :class:`pint.Quantity`
@@ -754,8 +749,8 @@ def interpolate_cloudparticles_profile(
     wav_raw = wavelengths.m_as(w_units)
     w_flat, cw_flat = _w_brackets(w_axis_raw, wav_raw)
 
-    r_eff_all = cumulus_profile.r_eff.values
-    v_eff_all = cumulus_profile.v_eff.values
+    r_eff_all = profile.r_eff.values
+    v_eff_all = profile.v_eff.values
     N = len(r_eff_all)
 
     if rv_mode == "trilinear":
@@ -774,7 +769,7 @@ def interpolate_cloudparticles_profile(
     return xr.Dataset(
         coords=dict(
             index=(["index"], np.arange(N)),
-            w=(["w"], wav_raw),
+            w=(["w"], wav_raw, ds.w.attrs.copy()),
             rho=float(ds.rho.values),
             alpha=float(ds.alpha.values.mean()),
         ),
@@ -783,8 +778,8 @@ def interpolate_cloudparticles_profile(
             phase=(["total_pts", "ch16"], phase),
             grid_start=(["index", "w"], grid_start),
             grid_len=(["index", "w"], grid_len),
-            m_extinction=(["index", "w"], mext),
-            albedo=(["index", "w"], alb),
+            m_extinction=(["index", "w"], mext, ds.m_extinction.attrs.copy()),
+            albedo=(["index", "w"], alb, ds.albedo.attrs.copy()),
         ),
     )
 
@@ -990,9 +985,7 @@ class CloudPhaseFunction(PhaseFunction):
     def params(self) -> dict[str, SceneParameter]:
         return {
             "index_volume.grid": SceneParameter(
-                lambda ctx: mi.VolumeGrid(
-                    self.spatial_index(ctx).astype(np.float32)
-                ),
+                lambda ctx: mi.VolumeGrid(self.spatial_index(ctx).astype(np.float32)),
                 KernelSceneParameterFlags.SPECTRAL,
             ),
             "n_entries": SceneParameter(
