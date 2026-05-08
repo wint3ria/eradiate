@@ -6,8 +6,8 @@ from eradiate import unit_registry as ureg
 from eradiate.contexts import KernelContext
 from eradiate.grid import PlaneParallelGridCoords
 from eradiate.scenes.atmosphere import (
-    GriddedHeterogeneousAtmosphere,
     GriddedMolecularAtmosphere,
+    HeterogeneousAtmosphere,
     MolecularAtmosphere,
     ParticleLayer,
 )
@@ -37,7 +37,7 @@ def default_spectral_index(atmosphere):
 
 def test_gridded_empty(modes_all_double):
     with pytest.raises(ValueError):
-        GriddedHeterogeneousAtmosphere()
+        HeterogeneousAtmosphere()
 
 
 def __thermoprops_grid():
@@ -74,7 +74,7 @@ def __thermoprops_grid():
 def test_gridded_single_mono(
     mode_mono, geometry, atm_params, atmosphere_us_standard_mono
 ):
-    atmosphere = GriddedHeterogeneousAtmosphere(geometry=geometry, **atm_params())
+    atmosphere = HeterogeneousAtmosphere(geometry=geometry, **atm_params())
     kernel_context = KernelContext()
     if atmosphere.molecular_atmosphere:
         kernel_context = KernelContext(

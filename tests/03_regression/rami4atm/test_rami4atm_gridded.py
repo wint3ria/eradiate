@@ -8,8 +8,8 @@ from robot.api import logger
 
 import eradiate
 from eradiate.scenes.atmosphere import (
-    GriddedHeterogeneousAtmosphere,
     GriddedMolecularAtmosphere,
+    HeterogeneousAtmosphere,
 )
 from eradiate.scenes.geometry import PlaneParallelGeometry
 from eradiate.test_tools.regression import SidakTTest, figure_to_html
@@ -67,7 +67,7 @@ def test_rami4atm_gridded(mode_ckd_double, case, artefact_dir):
             tau_ref = exp.atmosphere.particle_layers[0].tau_ref
             tau_ref = tau_ref * np.ones(resolution)
 
-        atm = GriddedHeterogeneousAtmosphere(
+        atm = HeterogeneousAtmosphere(
             geometry=geometry,
             molecular_atmosphere=mol_atm_3d,
             particle_layers=[

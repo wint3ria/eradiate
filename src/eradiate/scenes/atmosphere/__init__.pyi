@@ -2,12 +2,6 @@ from ._cloudfield import CloudField as CloudField
 from ._core import Atmosphere as Atmosphere
 from ._core import AtmosphericMedium as AtmosphericMedium
 from ._core import atmosphere_factory as atmosphere_factory
-from ._heterogeneous import (
-    AbstractHeterogeneousAtmosphere as AbstractHeterogeneousAtmosphere,
-)
-from ._heterogeneous import (
-    GriddedHeterogeneousAtmosphere as GriddedHeterogeneousAtmosphere,
-)
 from ._heterogeneous import HeterogeneousAtmosphere as HeterogeneousAtmosphere
 from ._homogeneous import HomogeneousAtmosphere as HomogeneousAtmosphere
 from ._molecular import GriddedMolecularAtmosphere as GriddedMolecularAtmosphere
