@@ -12,12 +12,13 @@ from eradiate import traverse
 from ...attrs import define, documented
 from ...grid import GridCoords, PlaneParallelGridCoords
 from ...kernel import SceneParameter
-from ...util.misc import cache_by_id
 from ...scenes.atmosphere import AtmosphericMedium
 from ...scenes.geometry import PlaneParallelGeometry
 from ...scenes.phase import CloudPhaseFunction, interpolate_cloudparticles_profile
 from ...spectral.index import SpectralIndex
+from ...units import to_quantity
 from ...units import unit_registry as ureg
+from ...util.misc import cache_by_id
 
 
 def _validate_particles_interp_method(instance, attribute, value):
@@ -54,13 +55,34 @@ class CloudField(AtmosphericMedium):
     profile: xr.Dataset = documented(
         attrs.field(kw_only=True),
         doc="Sparse volumetric cloud profile dataset.  Must contain 1-D "
-        "variables ``r_eff``, ``v_eff``, and ``extinction`` indexed by a "
+        "variables ``r_eff``, ``v_eff``, and ``mass_density`` indexed by a "
         "flat ``index`` dimension, together with integer voxel coordinates "
         "``i_x``, ``i_y``, and ``i_z`` (1-based) and level-edge coordinates "
         "``x_levels``, ``y_levels``, and ``z_levels``. "
         "This parameter has no default.",
         type="xr.Dataset",
     )
+
+    profile_mode: str = documented(
+        attrs.field(
+            validator=attrs.validators.instance_of(str), default="mass_density"
+        ),
+        doc="Type of profile, ``mass_density`` or ``extinction``",
+        type="str",
+        default="mass_density",
+    )
+
+    @profile.validator
+    @profile_mode.validator
+    def _validate_profile_mode(self, attribute, value):
+        if self.profile_mode not in ["extinction", "mass_density"]:
+            raise ValueError(
+                f"Unknown profile mode {self.profile_mode}, must be 'extinction' or 'mass_density'"
+            )
+        if self.profile_mode not in self.profile.data_vars:
+            raise ValueError(
+                f"The profile_mode {self.profile_mode} is not present in the profile dataset"
+            )
 
     properties: xr.Dataset = documented(
         attrs.field(kw_only=True),
@@ -95,8 +117,8 @@ class CloudField(AtmosphericMedium):
             validator=_validate_particles_interp_method,
         ),
         doc="Interpolation strategy for the particle property lookup. "
-        "``\"linear\"`` uses trilinear interpolation in the "
-        "``(w, r_eff, v_eff)`` parameter space; ``\"nearest\"`` "
+        '``"linear"`` uses trilinear interpolation in the '
+        '``(w, r_eff, v_eff)`` parameter space; ``"nearest"`` '
         "uses nearest-neighbour lookup in ``(r_eff, v_eff)`` with "
         "linear interpolation in wavelength.",
         type="str",
@@ -132,8 +154,9 @@ class CloudField(AtmosphericMedium):
             If both :attr:`has_absorption` and :attr:`has_scattering` are
             ``False``.
         """
+        wavelengths = np.atleast_1d(si.w)
         grid = grid or self.geometry.grid
-        profile = self._resample_profile_to_grid(grid)
+        profile = self._resample_profile_to_grid(grid, wavelengths)
 
         ix = profile.i_x.values - 1
         iy = profile.i_y.values - 1
@@ -142,8 +165,25 @@ class CloudField(AtmosphericMedium):
         sigma_t = np.zeros(
             (grid.n_cells_x, grid.n_cells_y, grid.n_cells_z), dtype=np.float32
         )
-        sigma_t[ix, iy, iz] = profile.extinction.values[np.newaxis, :]
-        sigma_t = sigma_t * ureg.Unit("1/km")
+
+        if self.profile_mode == "extinction":
+            ext = to_quantity(profile.extinction)
+        elif self.profile_mode == "mass_density":
+            properties = self._interpolate_profile(wavelengths, grid, profile)
+            interp_w = wavelengths.m_as(properties.w.attrs["units"])
+            if len(properties.w) > 1:
+                mass_extinction = to_quantity(
+                    properties.m_extinction.interp(w=interp_w)
+                )
+            else:
+                mass_extinction = to_quantity(properties.m_extinction)
+            mass_density = to_quantity(profile.mass_density)
+            ext = mass_extinction.T * mass_density
+        else:
+            raise ValueError("Unknown")
+
+        sigma_t[ix, iy, iz] = ext.m[np.newaxis, :]
+        sigma_t = sigma_t * ext.units
 
         if self.has_absorption and self.has_scattering:
             return sigma_t
@@ -214,9 +254,7 @@ class CloudField(AtmosphericMedium):
             1.0 - self.eval_albedo(si, grid).m_as(ureg.dimensionless)
         )
 
-    def eval_mfp(
-        self, si: SpectralIndex, grid: GridCoords | None = None
-    ) -> np.ndarray:
+    def eval_mfp(self, si: SpectralIndex, grid: GridCoords | None = None) -> np.ndarray:
         """
         Evaluate the mean free path on the render grid.
 
@@ -267,7 +305,7 @@ class CloudField(AtmosphericMedium):
 
         if self.has_absorption and self.has_scattering:
             wavelengths = np.atleast_1d(si.w)
-            profile = self._resample_profile_to_grid(grid)
+            profile = self._resample_profile_to_grid(grid, si.w)
             properties = self._interpolate_profile(wavelengths, grid, profile)
 
             ix = profile.i_x.values - 1
@@ -302,6 +340,7 @@ class CloudField(AtmosphericMedium):
     def _resample_profile_to_grid(
         self,
         grid: GridCoords,
+        w: pint.Quantity,
         method: Literal["nearest", "linear"] = "nearest",
     ) -> xr.Dataset:
         """
@@ -336,14 +375,26 @@ class CloudField(AtmosphericMedium):
         v_eff_src = np.zeros((n_x, n_y, n_z_src), dtype=np.float32)
         ext_src = np.zeros((n_x, n_y, n_z_src), dtype=np.float32)
         valid_src = np.zeros((n_x, n_y, n_z_src), dtype=bool)
+        valid_src[ix, iy, iz] = True
         r_eff_src[ix, iy, iz] = self.profile.r_eff.values
         v_eff_src[ix, iy, iz] = self.profile.v_eff.values
-        ext_src[ix, iy, iz] = self.profile.extinction.values
-        valid_src[ix, iy, iz] = True
 
-        il = np.clip(
-            np.searchsorted(z_centers_src, z_centers_tgt) - 1, 0, n_z_src - 2
-        )
+        profile_variable = self.profile[self.profile_mode]
+        if self.profile_mode == "extinction":
+            interp_w = w.m_as(profile_variable.w.attrs["units"])
+            if len(profile_variable.w) > 1:
+                ext_prof = profile_variable.interp(w=interp_w).squeeze()
+            else:
+                ext_prof = profile_variable.squeeze()
+            ext_prof = to_quantity(ext_prof)
+        elif self.profile_mode == "mass_density":
+            ext_prof = to_quantity(profile_variable)
+        else:
+            raise ValueError(f"Unknown profile_mode {self.profile_mode}")
+
+        ext_src[ix, iy, iz] = ext_prof.m
+
+        il = np.clip(np.searchsorted(z_centers_src, z_centers_tgt) - 1, 0, n_z_src - 2)
         iu = il + 1
 
         if method == "nearest":
@@ -365,14 +416,22 @@ class CloudField(AtmosphericMedium):
 
         ix_tgt, iy_tgt, iz_tgt = np.where(valid_tgt)
         return xr.Dataset(
-            data_vars=dict(
-                i_x=(["index"], ix_tgt + 1),
-                i_y=(["index"], iy_tgt + 1),
-                i_z=(["index"], iz_tgt + 1),
-                extinction=(["index"], ext_tgt[ix_tgt, iy_tgt, iz_tgt]),
-                r_eff=(["index"], r_eff_tgt[ix_tgt, iy_tgt, iz_tgt]),
-                v_eff=(["index"], v_eff_tgt[ix_tgt, iy_tgt, iz_tgt]),
-            ),
+            data_vars={
+                **dict(
+                    i_x=(["index"], ix_tgt + 1),
+                    i_y=(["index"], iy_tgt + 1),
+                    i_z=(["index"], iz_tgt + 1),
+                    r_eff=(["index"], r_eff_tgt[ix_tgt, iy_tgt, iz_tgt]),
+                    v_eff=(["index"], v_eff_tgt[ix_tgt, iy_tgt, iz_tgt]),
+                ),
+                **{
+                    self.profile_mode: (
+                        ["index"],
+                        ext_tgt[ix_tgt, iy_tgt, iz_tgt],
+                        dict(units=ext_prof.units),
+                    ),
+                },
+            },
             coords=dict(
                 z_levels=(["z"], grid.levels.m_as(ureg.kilometer)),
                 x_levels=(["x"], grid.edges_x.m_as(ureg.kilometer)),
@@ -385,6 +444,7 @@ class CloudField(AtmosphericMedium):
         Return a regular :class:`.PlaneParallelGridCoords` aligned with
         and fine enough to resolve the profile's z-levels.
         """
+
         def _regularize(arr: np.ndarray) -> np.ndarray:
             min_gap = np.diff(arr).min()
             n = int(round((arr[-1] - arr[0]) / min_gap)) * 2 + 1
@@ -516,7 +576,7 @@ class CloudField(AtmosphericMedium):
             Per-voxel index into *interp_ds*, or ``-1`` for empty voxels.
         """
         grid = self.geometry.grid
-        profile = self._resample_profile_to_grid(grid)
+        profile = self._resample_profile_to_grid(grid, si.w)
         interp_ds = self._interpolate_profile(np.atleast_1d(si.w), grid, profile)
 
         ix = profile.i_x.values - 1
@@ -531,6 +591,8 @@ class CloudField(AtmosphericMedium):
     def phase(self) -> CloudPhaseFunction:
         return CloudPhaseFunction(
             grid=self.geometry.grid,
-            interpolated_cloudproperties=lambda ctx: self._eval_cloud_phase_data(ctx.si)[0],
+            interpolated_cloudproperties=lambda ctx: self._eval_cloud_phase_data(
+                ctx.si
+            )[0],
             spatial_index=lambda ctx: self._eval_cloud_phase_data(ctx.si)[1],
         )
