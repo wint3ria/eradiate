@@ -1,14 +1,10 @@
 from ._blend import BlendPhaseFunction as BlendPhaseFunction
-from ._cloudphase import CloudPhaseFunction as CloudPhaseFunction
-from ._cloudphase import format_cloudparticles_dataset as format_cloudparticles_dataset
-from ._cloudphase import (
-    interpolate_cloudparticles_profile as interpolate_cloudparticles_profile,
-)
 from ._core import PhaseFunction as PhaseFunction
 from ._core import phase_function_factory as phase_function_factory
 from ._hg import HenyeyGreensteinPhaseFunction as HenyeyGreensteinPhaseFunction
 from ._isotropic import IsotropicPhaseFunction as IsotropicPhaseFunction
 from ._multi import Multi1DPhaseFunction as Multi1DPhaseFunction
 from ._multi import Multi3DPhaseFunction as Multi3DPhaseFunction
+from ._particlephase import ParticlePhase as ParticlePhase
 from ._rayleigh import RayleighPhaseFunction as RayleighPhaseFunction
 from ._tabulated import TabulatedPhaseFunction as TabulatedPhaseFunction

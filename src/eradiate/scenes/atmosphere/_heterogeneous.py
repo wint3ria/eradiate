@@ -12,10 +12,10 @@ import mitsuba as mi
 import numpy as np
 import pint
 
-from ._cloudfield import CloudField
 from ._core import AtmosphericMedium, atmosphere_factory
 from ._homogeneous import HomogeneousAtmosphere
 from ._molecular import MolecularAtmosphere
+from ._particle_field import ParticleField
 from ._particle_layer import ParticleLayer
 from ..core import traverse
 from ..phase import Multi3DPhaseFunction, PhaseFunction
@@ -41,7 +41,6 @@ def _molecular_converter(value):
 def _particle_layer_converter(value):
     if not value:
         return []
-
     if not isinstance(value, (list, tuple)):
         return _particle_layer_converter([value])
 
@@ -119,11 +118,12 @@ class HeterogeneousAtmosphere(AtmosphericMedium):
                 "scaled individually"
             )
 
-    clouds: CloudField | None = documented(
+    particle_field: ParticleField | None = documented(
         attrs.field(default=None, kw_only=True),
-        doc="Optional cloud field component.",
-        type=".CloudField or None",
-        init_type=".CloudField or None, optional",
+        doc="Optional particle field component providing spatially "
+        "heterogeneous cloud optical properties with trilinear interpolation.",
+        type=".ParticleField or None",
+        init_type=".ParticleField or None, optional",
         default="None",
     )
 
@@ -146,8 +146,8 @@ class HeterogeneousAtmosphere(AtmosphericMedium):
         """
         result = [self.molecular_atmosphere] if self.molecular_atmosphere else []
         result.extend(self.particle_layers)
-        if self.clouds is not None:
-            result.append(self.clouds)
+        if self.particle_field is not None:
+            result.append(self.particle_field)
         return result
 
     def update(self):
