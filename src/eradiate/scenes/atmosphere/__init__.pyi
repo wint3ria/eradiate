@@ -1,4 +1,3 @@
-from ._cloudfield import CloudField as CloudField
 from ._core import Atmosphere as Atmosphere
 from ._core import AtmosphericMedium as AtmosphericMedium
 from ._core import atmosphere_factory as atmosphere_factory
@@ -18,6 +17,11 @@ from ._particle_dist import ParticleDistribution as ParticleDistribution
 from ._particle_dist import UniformParticleDistribution as UniformParticleDistribution
 from ._particle_dist import (
     particle_distribution_factory as particle_distribution_factory,
+)
+from ._particle_field import ParticleField as ParticleField
+from ._particle_field import format_particles_dataset as format_particles_dataset
+from ._particle_field import (
+    interp_properties_wavelength as interp_properties_wavelength,
 )
 from ._particle_layer import ParticleLayer as ParticleLayer
 from ._util import eval_transmittance_ckd as eval_transmittance_ckd
