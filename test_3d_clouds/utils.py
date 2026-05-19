@@ -4,14 +4,14 @@ import pint
 import xarray as xr
 
 
-def load_aerosol_data(data_path: str, particle_shape: str, wavelength: pint.Quantity):
+def load_aerosol_data(data_path: str, particle_shape: str, wavelength: pint.Quantity, nreff=0):
     # Load aerosol component dataset
     file = xr.open_dataset(data_path)
     data = file.copy()
 
     # phase raw shape is [wavelenth, phase, theta]
     # reshape to target [wavelenth, theta, phase]
-    phase_da = data.phase.isel(nreff=0).dropna(dim="nthetamax")
+    phase_da = data.phase.isel(nreff=nreff).dropna(dim="nthetamax")
     phase_raw = phase_da.transpose("nlam", "nthetamax", "nphamat").values
 
     n_wavelength = phase_da.nlam.shape[0]
@@ -46,8 +46,8 @@ def load_aerosol_data(data_path: str, particle_shape: str, wavelength: pint.Quan
     def make_phase_eradiate(lbda):
         return xr.Dataset(
             data_vars={
-                "sigma_t": (["w"], data.ext.isel(nreff=0).values, {"units": "1/km"}),
-                "albedo": (["w"], data.ssa.isel(nreff=0).values, {"units": ""}),
+                "sigma_t": (["w"], data.ext.isel(nreff=nreff).values, {"units": "1/km"}),
+                "albedo": (["w"], data.ssa.isel(nreff=nreff).values, {"units": ""}),
                 "phase": (["w", "mu", "i", "j"], phase_np),
             },
             coords={
@@ -56,8 +56,8 @@ def load_aerosol_data(data_path: str, particle_shape: str, wavelength: pint.Quan
                     "mu",
                     np.cos(
                         np.deg2rad(
-                            data.theta.isel(
-                                nlam=0, nreff=0, nphamat=0, nthetamax=phase_da.nthetamax
+                            data.theta.astype(np.float64).isel(
+                                nlam=0, nreff=nreff, nphamat=0, nthetamax=phase_da.nthetamax
                             ).values
                         )
                     ),
