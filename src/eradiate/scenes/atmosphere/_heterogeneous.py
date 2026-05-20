@@ -12,6 +12,7 @@ import attrs
 import mitsuba as mi
 import numpy as np
 import pint
+from axsdb import AbsorptionDatabase
 
 from ._core import AtmosphericMedium, atmosphere_factory
 from ._homogeneous import HomogeneousAtmosphere
@@ -24,7 +25,6 @@ from ...attrs import define, documented
 from ...contexts import KernelContext
 from ...grid import GridCoords
 from ...kernel import SearchSceneParameter
-from ...radprops import AbsorptionDatabase
 from ...spectral.index import SpectralIndex
 from ...units import unit_context_config as ucc
 from ...units import unit_registry as ureg
