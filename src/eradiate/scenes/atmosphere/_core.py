@@ -713,9 +713,12 @@ class AtmosphericMedium(Atmosphere, ABC):
         )
 
         if isinstance(self.geometry, SphericalShellGeometry):
-            extr_rmin = dict(rmin=self.geometry.atmosphere_volume_rmin)
+            extr_conf = {
+                "type": "extremum_spherical",
+                "rmin": self.geometry.atmosphere_volume_rmin,
+            }
         else:
-            extr_rmin = {}
+            extr_conf = { "type": "extremum_grid" }
 
         if piecewise:
             medium = "piecewise"
@@ -724,11 +727,10 @@ class AtmosphericMedium(Atmosphere, ABC):
             to_world = self.geometry.atmosphere_volume_to_world
             if self.extremum_resolution != (1, 1, 1):
                 extremum = {
-                    "type": "extremum_spherical",
+                    **extr_conf,
                     "volume": {"type": "ref", "id": sigma_t_id},
                     "resolution": self.extremum_resolution,
                     "to_world": to_world,
-                    **extr_rmin,
                 }
             medium = "heterogeneous"
             aabb_min = self.geometry.bbox.min.m_as("m")
