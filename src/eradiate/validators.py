@@ -63,7 +63,7 @@ def is_positive(_, attribute, value):
     ValueError
         If the value is not positive or zero.
     """
-    if value < 0.0:
+    if np.all(np.atleast_1d(value)) < 0.0:
         raise ValueError(f"{attribute} must be positive or zero, got {value}")
 
 
