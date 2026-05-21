@@ -15,7 +15,7 @@ from ._helpers import (
 )
 from ..attrs import AUTO, define, documented
 from ..scenes.atmosphere import (
-    AbstractHeterogeneousAtmosphere,
+    AtmosphericMedium,
     Atmosphere,
     HeterogeneousAtmosphere,
     HomogeneousAtmosphere,
@@ -180,7 +180,7 @@ class DEMExperiment(EarthObservationExperiment):
         """
         Ensures that the integrator is compatible with the atmosphere and geometry.
         """
-        if isinstance(self.atmosphere, AbstractHeterogeneousAtmosphere):
+        if isinstance(self.atmosphere, AtmosphericMedium):
             if (
                 self.atmosphere.extremum_resolution != (1, 1, 1)
                 and not self.integrator.extremum_compatible
