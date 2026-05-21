@@ -413,6 +413,15 @@ class ParticleField(AtmosphericMedium):
         type="xr.Dataset",
     )
 
+    z_interp_method: str = documented(
+        attrs.field(kw_only=True, default="linear"),
+        doc="Profile interpolation method against Z axis. profiles "
+        "must be resampled to a regular grid before being used for "
+        "inferring optical properties. Default method is linear.",
+        type="str",
+        default="linear",
+    )
+
     has_absorption: bool = documented(
         attrs.field(default=True, converter=bool, kw_only=True),
         doc="If ``True``, the medium contributes an absorption coefficient.",
@@ -797,7 +806,20 @@ class ParticleField(AtmosphericMedium):
         w: ureg.Quantity,
     ) -> xr.Dataset:
         """
-        Interpolate the sparse cloud profile onto the cells of *grid*.
+        Resample the sparse cloud profile onto the cells of *grid*.
+    
+        The resampling strategy is controlled by ``self.z_interp_method``:
+    
+        ``"nearest"``
+            Each target cell is assigned to the nearest source cell centre.
+            Entries are deduplicated.
+    
+        ``"linear"``
+            Each target cell receives a linear interpolation between the two
+            bracketing source cell centres.
+    
+        In both modes, target cells that fall outside the source z range are
+        treated as invalid and absent from the sparse output.
     
         Parameters
         ----------
@@ -809,22 +831,21 @@ class ParticleField(AtmosphericMedium):
         Returns
         -------
         xr.Dataset
-            Sparse interpolated dataset indexed by a flat ``index`` dimension
-            with voxel coordinates ``i_x``, ``i_y``, ``i_z`` (render-grid,
-            0-based) and cloud microphysical properties.  Target cells that
-            fall outside the source z range are treated as invalid and absent
-            from the output.
+            Sparse dataset indexed by a flat ``index`` dimension with voxel
+            coordinates ``i_x``, ``i_y``, ``i_z`` (render-grid, 0-based) and
+            cloud microphysical properties.
     
         Raises
         ------
         ValueError
-            If the profile x/y grid does not match the render grid.
+            If the profile x/y grid does not match the render grid, or if
+            ``z_interp_method`` is not one of ``"nearest"`` or ``"linear"``.
         """
-        z_levels_src = to_quantity(self.profile.z_levels).m_as(ureg.meter)
+        z_levels_src  = to_quantity(self.profile.z_levels).m_as(ureg.meter)
         z_centers_src = 0.5 * (z_levels_src[:-1] + z_levels_src[1:])
         z_centers_tgt = grid.layers.m_as(ureg.meter)
-        n_z_src = len(z_centers_src)
-
+        n_z_src       = len(z_centers_src)
+    
         profile_nx = len(self.profile.x_levels.values) - 1
         profile_ny = len(self.profile.y_levels.values) - 1
         if profile_nx != grid.n_cells_x or profile_ny != grid.n_cells_y:
@@ -833,17 +854,17 @@ class ParticleField(AtmosphericMedium):
                 f"render grid ({grid.n_cells_x} x {grid.n_cells_y}). "
                 "Resample the profile to the render grid first."
             )
-
+    
         ix = self.profile.i_x.values
         iy = self.profile.i_y.values
         iz = self.profile.i_z.values
         n_x = grid.n_cells_x
         n_y = grid.n_cells_y
     
-        r_eff_src       = np.zeros((n_x, n_y, n_z_src), dtype=np.float32)
-        v_eff_src       = np.zeros((n_x, n_y, n_z_src), dtype=np.float32)
+        r_eff_src        = np.zeros((n_x, n_y, n_z_src), dtype=np.float32)
+        v_eff_src        = np.zeros((n_x, n_y, n_z_src), dtype=np.float32)
         mass_density_src = np.zeros((n_x, n_y, n_z_src), dtype=np.float32)
-        valid_src       = np.zeros((n_x, n_y, n_z_src), dtype=bool)
+        valid_src        = np.zeros((n_x, n_y, n_z_src), dtype=bool)
     
         valid_src[ix, iy, iz]        = True
         r_eff_src[ix, iy, iz]        = self.profile.r_eff.values
@@ -851,47 +872,67 @@ class ParticleField(AtmosphericMedium):
         mass_density_prof            = to_quantity(self.profile.mass_density)
         mass_density_src[ix, iy, iz] = mass_density_prof.m
     
-        # Compute interpolation weights along z
-        # For every target centre z_t we find the bracketing source indices
-        # il / iu and the weight t ∈ [0, 1] such that:
-        #   value(z_t) = (1 - t) * value[il] + t * value[iu]
-        il = np.searchsorted(z_centers_src, z_centers_tgt, side="right") - 1
-        iu = il + 1
+        # Bracket each target centre between two source centres.
+        # il / iu are the lower / upper indices; in_range masks out targets
+        # that fall outside the source z extent.
+        il       = np.searchsorted(z_centers_src, z_centers_tgt, side="right") - 1
+        iu       = il + 1
         in_range = (il >= 0) & (iu < n_z_src)
-        il_safe = np.clip(il, 0, n_z_src - 2)
-        iu_safe = il_safe + 1
-        dz = z_centers_src[iu_safe] - z_centers_src[il_safe]
-        t  = np.where(
-            in_range,
-            (z_centers_tgt - z_centers_src[il_safe]) / dz,
-            0.0,
-        ).astype(np.float32)
+        il_safe  = np.clip(il, 0, n_z_src - 2)
+        iu_safe  = il_safe + 1
+        iz_src_tgt = None
     
-        # Interpolation
-        r_eff_tgt        = (1.0 - t) * r_eff_src[:, :, il_safe]        + t * r_eff_src[:, :, iu_safe]
-        v_eff_tgt        = (1.0 - t) * v_eff_src[:, :, il_safe]        + t * v_eff_src[:, :, iu_safe]
-        mass_density_tgt = (1.0 - t) * mass_density_src[:, :, il_safe] + t * mass_density_src[:, :, iu_safe]
-
-        valid_tgt = (
-            valid_src[:, :, il_safe]
-            & valid_src[:, :, iu_safe]
-            & in_range
-        )
+        if self.z_interp_method == "nearest":
+            # Pick the closer of the two bracketing centres.
+            mid = 0.5 * (z_centers_src[il_safe] + z_centers_src[iu_safe])
+            inn = np.where(z_centers_tgt < mid, il_safe, iu_safe)
+    
+            r_eff_tgt        = r_eff_src[:, :, inn]
+            v_eff_tgt        = v_eff_src[:, :, inn]
+            mass_density_tgt = mass_density_src[:, :, inn]
+            valid_tgt        = valid_src[:, :, inn] & in_range
+            iz_src_tgt       = inn
+    
+        elif self.z_interp_method == "linear":
+            # Interpolation weight t ∈ [0, 1]:
+            #   value(z_t) = (1 - t) * value[il] + t * value[iu]
+            dz = z_centers_src[iu_safe] - z_centers_src[il_safe]
+            t  = np.where(
+                in_range,
+                (z_centers_tgt - z_centers_src[il_safe]) / dz,
+                0.0,
+            ).astype(np.float32)
+    
+            r_eff_tgt        = (1.0 - t) * r_eff_src[:, :, il_safe]        + t * r_eff_src[:, :, iu_safe]
+            v_eff_tgt        = (1.0 - t) * v_eff_src[:, :, il_safe]        + t * v_eff_src[:, :, iu_safe]
+            mass_density_tgt = (1.0 - t) * mass_density_src[:, :, il_safe] + t * mass_density_src[:, :, iu_safe]
+            valid_tgt        = valid_src[:, :, il_safe] & valid_src[:, :, iu_safe] & in_range
+    
+        else:
+            raise ValueError(
+                f"Unsupported z_interp_method {self.z_interp_method!r}: "
+                "expected 'nearest' or 'linear'."
+            )
+    
         ix_tgt, iy_tgt, iz_tgt = np.where(valid_tgt)
-
-        return xr.Dataset(
-            data_vars=dict(
-                i_x          =(["index"], ix_tgt),
-                i_y          =(["index"], iy_tgt),
-                i_z          =(["index"], iz_tgt),
-                r_eff        =(["index"], r_eff_tgt[ix_tgt, iy_tgt, iz_tgt]),
-                v_eff        =(["index"], v_eff_tgt[ix_tgt, iy_tgt, iz_tgt]),
-                mass_density =(
-                    ["index"],
-                    mass_density_tgt[ix_tgt, iy_tgt, iz_tgt],
-                    {"units": str(mass_density_prof.units)},
-                ),
+    
+        data_vars = dict(
+            i_x         =(["index"], ix_tgt),
+            i_y         =(["index"], iy_tgt),
+            i_z         =(["index"], iz_tgt),
+            r_eff       =(["index"], r_eff_tgt[ix_tgt, iy_tgt, iz_tgt]),
+            v_eff       =(["index"], v_eff_tgt[ix_tgt, iy_tgt, iz_tgt]),
+            mass_density=(
+                ["index"],
+                mass_density_tgt[ix_tgt, iy_tgt, iz_tgt],
+                {"units": str(mass_density_prof.units)},
             ),
+        )
+        if iz_src_tgt is not None:
+            data_vars["i_z_src"] = (["index"], iz_src_tgt[iz_tgt])
+    
+        return xr.Dataset(
+            data_vars=data_vars,
             coords=dict(
                 z_levels=(["z"], grid.levels.m_as(ureg.kilometer)),
                 x_levels=(["x"], grid.edges_x.m_as(ureg.kilometer)),
@@ -1304,4 +1345,5 @@ class ParticleField(AtmosphericMedium):
             geometry=particle_layer.geometry,
             has_absorption=particle_layer.has_absorption,
             has_scattering=particle_layer.has_scattering,
+            z_interp_method="nearest",
         )
