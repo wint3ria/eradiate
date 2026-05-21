@@ -797,23 +797,24 @@ class ParticleField(AtmosphericMedium):
         w: ureg.Quantity,
     ) -> xr.Dataset:
         """
-        Resample the sparse cloud profile onto the cells of *grid*.
-
+        Interpolate the sparse cloud profile onto the cells of *grid*.
+    
         Parameters
         ----------
         grid : :class:`.GridCoords`
             Target render grid.
         w : :class:`pint.Quantity`
             Query wavelengths (used only for cache keying).
-
+    
         Returns
         -------
         xr.Dataset
-            Sparse resampled dataset indexed by a flat ``index`` dimension
+            Sparse interpolated dataset indexed by a flat ``index`` dimension
             with voxel coordinates ``i_x``, ``i_y``, ``i_z`` (render-grid,
-            0-based), ``i_z_src`` (source-profile z index, 0-based, for phase
-            deduplication), and cloud microphysical properties.
-
+            0-based) and cloud microphysical properties.  Target cells that
+            fall outside the source z range are treated as invalid and absent
+            from the output.
+    
         Raises
         ------
         ValueError
@@ -824,7 +825,6 @@ class ParticleField(AtmosphericMedium):
         z_centers_tgt = grid.layers.m_as(ureg.meter)
         n_z_src = len(z_centers_src)
 
-        # Validate that profile and render grid share the same x/y layout
         profile_nx = len(self.profile.x_levels.values) - 1
         profile_ny = len(self.profile.y_levels.values) - 1
         if profile_nx != grid.n_cells_x or profile_ny != grid.n_cells_y:
@@ -839,40 +839,54 @@ class ParticleField(AtmosphericMedium):
         iz = self.profile.i_z.values
         n_x = grid.n_cells_x
         n_y = grid.n_cells_y
-
-        r_eff_src = np.zeros((n_x, n_y, n_z_src), dtype=np.float32)
-        v_eff_src = np.zeros((n_x, n_y, n_z_src), dtype=np.float32)
+    
+        r_eff_src       = np.zeros((n_x, n_y, n_z_src), dtype=np.float32)
+        v_eff_src       = np.zeros((n_x, n_y, n_z_src), dtype=np.float32)
         mass_density_src = np.zeros((n_x, n_y, n_z_src), dtype=np.float32)
-        valid_src = np.zeros((n_x, n_y, n_z_src), dtype=bool)
-
-        valid_src[ix, iy, iz] = True
-        r_eff_src[ix, iy, iz] = self.profile.r_eff.values
-        v_eff_src[ix, iy, iz] = self.profile.v_eff.values
-        mass_density_prof = to_quantity(self.profile.mass_density)
+        valid_src       = np.zeros((n_x, n_y, n_z_src), dtype=bool)
+    
+        valid_src[ix, iy, iz]        = True
+        r_eff_src[ix, iy, iz]        = self.profile.r_eff.values
+        v_eff_src[ix, iy, iz]        = self.profile.v_eff.values
+        mass_density_prof            = to_quantity(self.profile.mass_density)
         mass_density_src[ix, iy, iz] = mass_density_prof.m
-
-        il = np.clip(np.searchsorted(z_centers_src, z_centers_tgt) - 1, 0, n_z_src - 2)
+    
+        # Compute interpolation weights along z
+        # For every target centre z_t we find the bracketing source indices
+        # il / iu and the weight t ∈ [0, 1] such that:
+        #   value(z_t) = (1 - t) * value[il] + t * value[iu]
+        il = np.searchsorted(z_centers_src, z_centers_tgt, side="right") - 1
         iu = il + 1
+        in_range = (il >= 0) & (iu < n_z_src)
+        il_safe = np.clip(il, 0, n_z_src - 2)
+        iu_safe = il_safe + 1
+        dz = z_centers_src[iu_safe] - z_centers_src[il_safe]
+        t  = np.where(
+            in_range,
+            (z_centers_tgt - z_centers_src[il_safe]) / dz,
+            0.0,
+        ).astype(np.float32)
+    
+        # Interpolation
+        r_eff_tgt        = (1.0 - t) * r_eff_src[:, :, il_safe]        + t * r_eff_src[:, :, iu_safe]
+        v_eff_tgt        = (1.0 - t) * v_eff_src[:, :, il_safe]        + t * v_eff_src[:, :, iu_safe]
+        mass_density_tgt = (1.0 - t) * mass_density_src[:, :, il_safe] + t * mass_density_src[:, :, iu_safe]
 
-        mid = 0.5 * (z_centers_src[il] + z_centers_src[iu])
-        inn = np.where(z_centers_tgt < mid, il, iu)
-        r_eff_tgt = r_eff_src[:, :, inn]
-        v_eff_tgt = v_eff_src[:, :, inn]
-        mass_density_tgt = mass_density_src[:, :, inn]
-        valid_tgt = valid_src[:, :, inn]
-
+        valid_tgt = (
+            valid_src[:, :, il_safe]
+            & valid_src[:, :, iu_safe]
+            & in_range
+        )
         ix_tgt, iy_tgt, iz_tgt = np.where(valid_tgt)
-        iz_src_tgt = inn[iz_tgt]
 
         return xr.Dataset(
             data_vars=dict(
-                i_x=(["index"], ix_tgt),
-                i_y=(["index"], iy_tgt),
-                i_z=(["index"], iz_tgt),
-                i_z_src=(["index"], iz_src_tgt),
-                r_eff=(["index"], r_eff_tgt[ix_tgt, iy_tgt, iz_tgt]),
-                v_eff=(["index"], v_eff_tgt[ix_tgt, iy_tgt, iz_tgt]),
-                mass_density=(
+                i_x          =(["index"], ix_tgt),
+                i_y          =(["index"], iy_tgt),
+                i_z          =(["index"], iz_tgt),
+                r_eff        =(["index"], r_eff_tgt[ix_tgt, iy_tgt, iz_tgt]),
+                v_eff        =(["index"], v_eff_tgt[ix_tgt, iy_tgt, iz_tgt]),
+                mass_density =(
                     ["index"],
                     mass_density_tgt[ix_tgt, iy_tgt, iz_tgt],
                     {"units": str(mass_density_prof.units)},
