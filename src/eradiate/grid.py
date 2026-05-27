@@ -1085,7 +1085,19 @@ class SphericalShellGridCoords(GridCoords):
 
     @property
     def to_world(self) -> mi.ScalarTransform4f:
-        raise NotImplementedError("WIP")
+        phi_min = self.azimuths.min().m_as(ureg.rad)
+        phi_max = self.azimuths.max().m_as(ureg.rad)
+        theta_min = self.colatitudes.min().m_as(ureg.rad)
+        theta_max = self.colatitudes.max().m_as(ureg.rad)
+    
+        # SphericalCoordsVolume outputs:
+        #   y = theta / pi        → colatitude normalized to [0, 1]
+        #   z = phi / (2*pi) + 0.5 → azimuth normalized to [0, 1]
+        return map_unit_cube(
+            xmin=0.0, xmax=1.0,  # radius: always spans full [0, 1]
+            ymin=theta_min / np.pi, ymax=theta_max / np.pi,
+            zmin=phi_min / (2 * np.pi) + 0.5, zmax=phi_max / (2 * np.pi) + 0.5,
+        )
 
     def __rich_repr__(self):
         yield "levels", self.levels

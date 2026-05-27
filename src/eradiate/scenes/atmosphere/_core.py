@@ -712,6 +712,7 @@ class AtmosphericMedium(Atmosphere, ABC):
             and self.geometry.grid.onedim
         )
 
+        aabb_conf = {}
         if isinstance(self.geometry, SphericalShellGeometry):
             extr_conf = {
                 "type": "extremum_spherical",
@@ -719,10 +720,15 @@ class AtmosphericMedium(Atmosphere, ABC):
             }
         else:
             extr_conf = { "type": "extremum_grid" }
+            aabb_min = self.geometry.bbox.min.m_as("m")
+            # The geometry bbox inserts a sub-surface padding. We want the data to be evaluated
+            # on the entire geometry extent in x and y directions, but we should avoid the wrap_mode
+            # to affect the z direction.
+            aabb_min[2] = self.geometry.grid.levels[0].m_as("m")
+            aabb_conf = {"aabb_min": aabb_min, "aabb_max": self.geometry.bbox.max.m_as("m")}
 
         if piecewise:
             medium = "piecewise"
-            aabb = {}
         else:
             to_world = self.geometry.atmosphere_volume_to_world
             if self.extremum_resolution != (1, 1, 1):
@@ -733,12 +739,6 @@ class AtmosphericMedium(Atmosphere, ABC):
                     "to_world": to_world,
                 }
             medium = "heterogeneous"
-            aabb_min = self.geometry.bbox.min.m_as("m")
-            # The geometry bbox inserts a sub-surface padding. We want the data to be evaluated
-            # on the entire geometry extent in x and y directions, but we should avoid the wrap_mode
-            # to affect the z direction.
-            aabb_min[2] = self.geometry.grid.levels[0].m_as("m")
-            aabb = {"aabb_min": aabb_min, "aabb_max": self.geometry.bbox.max.m_as("m")}
 
         # Create medium dictionary
         result = {
@@ -748,7 +748,7 @@ class AtmosphericMedium(Atmosphere, ABC):
                 # hack fix by setting to True when we have a piecewise medium
                 (not get_mode().check(mi_color_mode="mono")) or (medium == "piecewise")
             ),
-            **aabb,
+            **aabb_conf,
             **volumes,
             # Note: "phase" is deliberately unset, this is left to the
             # Atmosphere.template property

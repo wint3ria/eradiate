@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Literal
+import warnings
 
 import attrs
 import numpy as np
@@ -11,7 +12,7 @@ from eradiate import traverse
 
 from ._core import PhaseFunction
 from ...attrs import define, documented
-from ...grid import GridCoords, PlaneParallelGridCoords
+from ...grid import GridCoords, PlaneParallelGridCoords, SphericalShellGridCoords
 from ...kernel import SceneParameter
 from ...scenes.atmosphere import AtmosphericMedium, ParticleLayer
 from ...scenes.geometry import PlaneParallelGeometry
@@ -295,12 +296,29 @@ def interp_properties_wavelength(
                     axis=-1,
                 )
 
+                lower_extinc = properties.m_extinction.values[lower_wi, r_eff_index, v_eff_index]
+                lower_albedo = properties.albedo.values[lower_wi, r_eff_index, v_eff_index]
+                upper_extinc = properties.m_extinction.values[upper_wi, r_eff_index, v_eff_index]
+                upper_albedo = properties.albedo.values[upper_wi, r_eff_index, v_eff_index]
+
                 for _, target_row in bracket_group.iterrows():
                     target_w = target_row["target_w"]
-                    wavelength_weight = (target_w - lower_w) / (upper_w - lower_w)
+                    t = (target_w - lower_w) / (upper_w - lower_w)
+
+                    w_lower = (1.0 - t) * lower_extinc * lower_albedo
+                    w_upper =        t  * upper_extinc * upper_albedo
+                    sigma_s_sum = w_lower + w_upper
+
+                    if sigma_s_sum > 0.0:
+                        w_lower /= sigma_s_sum
+                        w_upper /= sigma_s_sum
+                    else:
+                        w_lower = 1.0 - t
+                        w_upper = t
+
                     interpolated_phase = (
-                        (1.0 - wavelength_weight) * lower_phase_on_merged_theta
-                        + wavelength_weight * upper_phase_on_merged_theta
+                        w_lower * lower_phase_on_merged_theta
+                        + w_upper * upper_phase_on_merged_theta
                     )
 
                     output_index = target_w_to_output_index[target_w]
@@ -422,6 +440,18 @@ class ParticleField(AtmosphericMedium):
         default="linear",
     )
 
+    z_fill_value: float | str = documented(
+        attrs.field(default="strict", kw_only=True),
+        doc="Fill value for target cells outside the cloud extent when using "
+        "linear interpolation. If ``'strict'`` (default), target cells where "
+        "only one bracket is a valid cloud voxel are excluded from the output. "
+        "Otherwise, the value is passed to :func:`scipy.interpolate.interp1d` "
+        "as ``fill_value`` with ``bounds_error=False``.",
+        type="float or str",
+        init_type="float or str",
+        default='"strict"',
+    )
+    
     has_absorption: bool = documented(
         attrs.field(default=True, converter=bool, kw_only=True),
         doc="If ``True``, the medium contributes an absorption coefficient.",
@@ -556,7 +586,10 @@ class ParticleField(AtmosphericMedium):
         r_eff_grid[ix, iy, iz] = resampled.r_eff.values
         v_eff_grid[ix, iy, iz] = resampled.v_eff.values
 
-        return r_eff_grid, v_eff_grid
+        return (
+            r_eff_grid * ureg.Unit(resampled.r_eff.attrs["units"]), 
+            v_eff_grid * ureg.Unit(resampled.v_eff.attrs["units"]),
+        )
 
     def _eval_phase_data(self, si: SpectralIndex) -> xr.Dataset:
         return self._interpolate_properties(np.atleast_1d(si.w), self.geometry.grid)
@@ -573,13 +606,12 @@ class ParticleField(AtmosphericMedium):
             grid,
         )
         return ParticlePhase(
-            grid=grid,
-            r_eff_volume=r_eff_volume,
-            v_eff_volume=v_eff_volume,
+            geometry=self.geometry,
+            r_eff_volume=lambda ctx: r_eff_volume,
+            v_eff_volume=lambda ctx: v_eff_volume,
             r_eff_grid=properties.r_eff.values.astype(np.float32),
             v_eff_grid=properties.v_eff.values.astype(np.float32),
             phase_data=lambda ctx: self._eval_phase_data(ctx.si),
-            wrap_mode=str(self.geometry.wrap_mode),
             filter_type="nearest",
             blending_method="stochastic",
         )
@@ -799,27 +831,34 @@ class ParticleField(AtmosphericMedium):
 
         return interp_properties_wavelength(properties, wavelengths)
 
-    @cache_by_id
     def _resample_profile_to_grid(
         self,
         grid: GridCoords,
         w: ureg.Quantity,
+        method: str | None = None,
+        fill_value: float | str | None = None,
     ) -> xr.Dataset:
         """
         Resample the sparse cloud profile onto the cells of *grid*.
     
-        The resampling strategy is controlled by ``self.z_interp_method``:
+        The resampling strategy is controlled by ``method`` (or
+        ``self.z_interp_method`` if *method* is not set):
     
         ``"nearest"``
             Each target cell is assigned to the nearest source cell centre.
-            Entries are deduplicated.
     
         ``"linear"``
             Each target cell receives a linear interpolation between the two
-            bracketing source cell centres.
+            bracketing source cell centres. If ``fill_value`` is set, uses
+            :func:`scipy.interpolate.interp1d` with ``bounds_error=False``.
+            Otherwise, target cells where only one bracket is a valid cloud
+            voxel are excluded from the output.
     
-        In both modes, target cells that fall outside the source z range are
-        treated as invalid and absent from the sparse output.
+        The profile coordinate type (Cartesian vs spherical) is inferred from
+        the presence of ``azimuth_levels``/``colatitude_levels`` coordinates.
+        A warning is emitted when the profile and grid types do not match, but
+        processing continues — the user is trusted to define their data and
+        grid consistently.
     
         Parameters
         ----------
@@ -827,6 +866,15 @@ class ParticleField(AtmosphericMedium):
             Target render grid.
         w : :class:`pint.Quantity`
             Query wavelengths (used only for cache keying).
+        method : str, optional
+            Interpolation method. If set, overrides ``self.z_interp_method``.
+            Must be ``"nearest"`` or ``"linear"``.
+        fill_value : float or None, optional
+            If set, overrides ``self.fill_value``. Only relevant for the
+            ``"linear"`` method. If ``None``, target cells outside the cloud
+            extent are excluded from the output. Otherwise, passed to
+            :func:`scipy.interpolate.interp1d` as ``fill_value`` with
+            ``bounds_error=False``.
     
         Returns
         -------
@@ -839,15 +887,50 @@ class ParticleField(AtmosphericMedium):
         ------
         ValueError
             If the profile x/y grid does not match the render grid, or if
-            ``z_interp_method`` is not one of ``"nearest"`` or ``"linear"``.
+            the interpolation method is not one of ``"nearest"`` or
+            ``"linear"``.
         """
+        import warnings
+        from scipy.interpolate import interp1d
+    
+        z_interp_method = method     if method     is not None else self.z_interp_method
+        fill_value_     = fill_value if fill_value is not None else self.z_fill_value
+    
+        # --- Detect profile and grid coordinate types ---
+        profile_is_spherical = (
+            "azimuth_levels" in self.profile.coords
+            and "colatitude_levels" in self.profile.coords
+        )
+        grid_is_spherical = isinstance(grid, SphericalShellGridCoords)
+    
+        if profile_is_spherical and not grid_is_spherical:
+            warnings.warn(
+                "Profile has spherical coordinates (azimuth/colatitude) but target "
+                "grid is not a SphericalShellGridCoords. Proceeding anyway.",
+                UserWarning,
+            )
+        elif not profile_is_spherical and grid_is_spherical:
+            warnings.warn(
+                "Profile has Cartesian coordinates (x/y) but target grid is a "
+                "SphericalShellGridCoords. Assuming equatorial Mercator projection. "
+                "Proceeding anyway.",
+                UserWarning,
+            )
+    
+        # --- Z grid setup ---
         z_levels_src  = to_quantity(self.profile.z_levels).m_as(ureg.meter)
         z_centers_src = 0.5 * (z_levels_src[:-1] + z_levels_src[1:])
         z_centers_tgt = grid.layers.m_as(ureg.meter)
         n_z_src       = len(z_centers_src)
     
-        profile_nx = len(self.profile.x_levels.values) - 1
-        profile_ny = len(self.profile.y_levels.values) - 1
+        # --- XY compatibility check (cell counts only) ---
+        if profile_is_spherical:
+            profile_nx = len(self.profile.azimuth_levels.values) - 1
+            profile_ny = len(self.profile.colatitude_levels.values) - 1
+        else:
+            profile_nx = len(self.profile.x_levels.values) - 1
+            profile_ny = len(self.profile.y_levels.values) - 1
+    
         if profile_nx != grid.n_cells_x or profile_ny != grid.n_cells_y:
             raise ValueError(
                 f"Profile x/y grid ({profile_nx} x {profile_ny}) does not match "
@@ -855,62 +938,81 @@ class ParticleField(AtmosphericMedium):
                 "Resample the profile to the render grid first."
             )
     
-        ix = self.profile.i_x.values
-        iy = self.profile.i_y.values
-        iz = self.profile.i_z.values
+        ix  = self.profile.i_x.values
+        iy  = self.profile.i_y.values
+        iz  = self.profile.i_z.values
         n_x = grid.n_cells_x
         n_y = grid.n_cells_y
     
-        r_eff_src        = np.zeros((n_x, n_y, n_z_src), dtype=np.float32)
-        v_eff_src        = np.zeros((n_x, n_y, n_z_src), dtype=np.float32)
-        mass_density_src = np.zeros((n_x, n_y, n_z_src), dtype=np.float32)
+        mass_density_unit = str(to_quantity(self.profile.mass_density).units)
+        extinction_unit   = "1/km"
+        r_eff_unit        = str(self.profile.r_eff.attrs.get("units", "micron"))
+        v_eff_unit        = str(self.profile.v_eff.attrs.get("units", "micron ** 2"))
+    
+        r_eff_src        = np.zeros((n_x, n_y, n_z_src))
+        v_eff_src        = np.zeros((n_x, n_y, n_z_src))
+        mass_density_src = np.zeros((n_x, n_y, n_z_src))
+        extinction_src   = np.zeros((n_x, n_y, n_z_src))
         valid_src        = np.zeros((n_x, n_y, n_z_src), dtype=bool)
     
         valid_src[ix, iy, iz]        = True
-        r_eff_src[ix, iy, iz]        = self.profile.r_eff.values
-        v_eff_src[ix, iy, iz]        = self.profile.v_eff.values
-        mass_density_prof            = to_quantity(self.profile.mass_density)
-        mass_density_src[ix, iy, iz] = mass_density_prof.m
+        r_eff_src[ix, iy, iz]        = to_quantity(self.profile.r_eff).m_as(r_eff_unit)
+        v_eff_src[ix, iy, iz]        = to_quantity(self.profile.v_eff).m_as(v_eff_unit)
+        mass_density_src[ix, iy, iz] = to_quantity(self.profile.mass_density).m_as(mass_density_unit)
     
-        # Bracket each target centre between two source centres.
-        # il / iu are the lower / upper indices; in_range masks out targets
-        # that fall outside the source z extent.
-        il       = np.searchsorted(z_centers_src, z_centers_tgt, side="right") - 1
-        iu       = il + 1
-        in_range = (il >= 0) & (iu < n_z_src)
-        il_safe  = np.clip(il, 0, n_z_src - 2)
-        iu_safe  = il_safe + 1
-        iz_src_tgt = None
+        w_unit = self.profile.w.attrs["units"]
+        extinction_src[ix, iy, iz] = to_quantity(
+            self.profile.extinction.sel(w=w.m_as(w_unit), method="nearest").squeeze()
+        ).m_as(extinction_unit)
     
-        if self.z_interp_method == "nearest":
-            # Pick the closer of the two bracketing centres.
+        if z_interp_method == "nearest":
+            il       = np.searchsorted(z_centers_src, z_centers_tgt, side="right") - 1
+            iu       = il + 1
+            in_range = (il >= 0) & (iu < n_z_src)
+            il_safe  = np.clip(il, 0, n_z_src - 2)
+            iu_safe  = il_safe + 1
+    
             mid = 0.5 * (z_centers_src[il_safe] + z_centers_src[iu_safe])
             inn = np.where(z_centers_tgt < mid, il_safe, iu_safe)
     
             r_eff_tgt        = r_eff_src[:, :, inn]
             v_eff_tgt        = v_eff_src[:, :, inn]
             mass_density_tgt = mass_density_src[:, :, inn]
+            extinction_tgt   = extinction_src[:, :, inn]
             valid_tgt        = valid_src[:, :, inn] & in_range
-            iz_src_tgt       = inn
     
-        elif self.z_interp_method == "linear":
-            # Interpolation weight t ∈ [0, 1]:
-            #   value(z_t) = (1 - t) * value[il] + t * value[iu]
-            dz = z_centers_src[iu_safe] - z_centers_src[il_safe]
-            t  = np.where(
-                in_range,
-                (z_centers_tgt - z_centers_src[il_safe]) / dz,
-                0.0,
-            ).astype(np.float32)
+        elif z_interp_method == "linear":
+            if fill_value_ != "strict":
+                r_eff_tgt        = interp1d(z_centers_src, r_eff_src,        kind="linear", axis=2, bounds_error=False, fill_value=fill_value_, assume_sorted=True)(z_centers_tgt)
+                v_eff_tgt        = interp1d(z_centers_src, v_eff_src,        kind="linear", axis=2, bounds_error=False, fill_value=fill_value_, assume_sorted=True)(z_centers_tgt)
+                mass_density_tgt = interp1d(z_centers_src, mass_density_src, kind="linear", axis=2, bounds_error=False, fill_value=fill_value_, assume_sorted=True)(z_centers_tgt)
+                extinction_tgt   = interp1d(z_centers_src, extinction_src,   kind="linear", axis=2, bounds_error=False, fill_value=fill_value_, assume_sorted=True)(z_centers_tgt)
+                valid_tgt        = np.ones((n_x, n_y, len(z_centers_tgt)), dtype=bool)
     
-            r_eff_tgt        = (1.0 - t) * r_eff_src[:, :, il_safe]        + t * r_eff_src[:, :, iu_safe]
-            v_eff_tgt        = (1.0 - t) * v_eff_src[:, :, il_safe]        + t * v_eff_src[:, :, iu_safe]
-            mass_density_tgt = (1.0 - t) * mass_density_src[:, :, il_safe] + t * mass_density_src[:, :, iu_safe]
-            valid_tgt        = valid_src[:, :, il_safe] & valid_src[:, :, iu_safe] & in_range
+            else:
+                il       = np.searchsorted(z_centers_src, z_centers_tgt, side="right") - 1
+                iu       = il + 1
+                in_range = (il >= 0) & (iu < n_z_src)
+                il_safe  = np.clip(il, 0, n_z_src - 2)
+                iu_safe  = il_safe + 1
+    
+                dz = z_centers_src[iu_safe] - z_centers_src[il_safe]
+                t  = np.where(
+                    in_range,
+                    (z_centers_tgt - z_centers_src[il_safe]) / dz,
+                    0.0,
+                )
+                t = np.clip(t, 0.0, 1.0)
+    
+                r_eff_tgt        = (1.0 - t) * r_eff_src[:, :, il_safe]        + t * r_eff_src[:, :, iu_safe]
+                v_eff_tgt        = (1.0 - t) * v_eff_src[:, :, il_safe]        + t * v_eff_src[:, :, iu_safe]
+                mass_density_tgt = (1.0 - t) * mass_density_src[:, :, il_safe] + t * mass_density_src[:, :, iu_safe]
+                extinction_tgt   = (1.0 - t) * extinction_src[:, :, il_safe]   + t * extinction_src[:, :, iu_safe]
+                valid_tgt        = (valid_src[:, :, il_safe] & valid_src[:, :, iu_safe]) & in_range
     
         else:
             raise ValueError(
-                f"Unsupported z_interp_method {self.z_interp_method!r}: "
+                f"Unsupported z_interp_method {z_interp_method!r}: "
                 "expected 'nearest' or 'linear'."
             )
     
@@ -920,25 +1022,36 @@ class ParticleField(AtmosphericMedium):
             i_x         =(["index"], ix_tgt),
             i_y         =(["index"], iy_tgt),
             i_z         =(["index"], iz_tgt),
-            r_eff       =(["index"], r_eff_tgt[ix_tgt, iy_tgt, iz_tgt]),
-            v_eff       =(["index"], v_eff_tgt[ix_tgt, iy_tgt, iz_tgt]),
+            r_eff       =(["index"], r_eff_tgt[ix_tgt, iy_tgt, iz_tgt],
+                          {"units": r_eff_unit}),
+            v_eff       =(["index"], v_eff_tgt[ix_tgt, iy_tgt, iz_tgt],
+                          {"units": v_eff_unit}),
             mass_density=(
                 ["index"],
                 mass_density_tgt[ix_tgt, iy_tgt, iz_tgt],
-                {"units": str(mass_density_prof.units)},
+                {"units": mass_density_unit},
+            ),
+            extinction=(
+                ["index"],
+                extinction_tgt[ix_tgt, iy_tgt, iz_tgt],
+                {"units": extinction_unit},
             ),
         )
-        if iz_src_tgt is not None:
-            data_vars["i_z_src"] = (["index"], iz_src_tgt[iz_tgt])
     
-        return xr.Dataset(
-            data_vars=data_vars,
-            coords=dict(
-                z_levels=(["z"], grid.levels.m_as(ureg.kilometer)),
-                x_levels=(["x"], grid.edges_x.m_as(ureg.kilometer)),
-                y_levels=(["y"], grid.edges_y.m_as(ureg.kilometer)),
-            ),
-        )
+        if grid_is_spherical:
+            output_coords = dict(
+                z_levels=(["z"], grid.levels.m_as(ureg.kilometer),   {"units": "kilometer"}),
+                x_levels=(["x"], grid.azimuths.m_as(ureg.radian),    {"units": "radian"}),
+                y_levels=(["y"], grid.colatitudes.m_as(ureg.radian),  {"units": "radian"}),
+            )
+        else:
+            output_coords = dict(
+                z_levels=(["z"], grid.levels.m_as(ureg.kilometer),    {"units": "kilometer"}),
+                x_levels=(["x"], grid.edges_x.m_as(ureg.kilometer),   {"units": "kilometer"}),
+                y_levels=(["y"], grid.edges_y.m_as(ureg.kilometer),   {"units": "kilometer"}),
+            )
+    
+        return xr.Dataset(data_vars=data_vars, coords=output_coords)
 
     def _profile_regular_grid(self) -> PlaneParallelGridCoords:
         """

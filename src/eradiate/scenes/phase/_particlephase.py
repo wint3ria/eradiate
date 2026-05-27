@@ -9,6 +9,9 @@ from ._core import PhaseFunction
 from ...attrs import define, documented
 from ...kernel import DictParameter, KernelSceneParameterFlags, SceneParameter
 from ...util.misc import cache_by_id
+from ..geometry import SceneGeometry
+from ...gridvolume import generate_gridvolume
+from ...units import unit_registry as ureg
 
 
 @define(eq=False, slots=False)
@@ -47,26 +50,17 @@ class ParticlePhase(PhaseFunction):
         type="ndarray",
     )
 
-    phase_data: object = documented(
+    phase_data = documented(
         attrs.field(kw_only=True),
         doc="Callable ``(ctx) -> xr.Dataset`` returning the interpolated "
         "properties dataset at the current spectral index.",
         type="callable",
     )
 
-    grid: object = documented(
+    geometry: SceneGeometry = documented(
         attrs.field(kw_only=True),
-        doc=":class:`.GridCoords` instance defining the spatial extent of "
-        "the render grid.",
-        type="GridCoords",
-    )
-
-    wrap_mode: str = documented(
-        attrs.field(default="clamp", kw_only=True),
-        doc="Phase reff and veff wrap_mode. "
-        'Either ``"clamp"``, ``"repeat"`` or ``"mirror"``.',
-        type="str",
-        default='"clamp"',
+        doc=":class:`SceneGeometry` scene geometry",
+        type="SceneGeometry",
     )
 
     filter_type: str = documented(
@@ -95,11 +89,15 @@ class ParticlePhase(PhaseFunction):
         nodes_raw = np.cos(np.deg2rad(ds.theta_native.values)).astype(np.float64)
 
         mueller_raw = ds.phase_native.values[:, [0, 1, 5, 10, 11, 15]].astype(
-            np.float32
+            np.float64
         )
 
         grid_start = ds.start.values[w_idx].flatten().astype(np.uint32)
         grid_len = ds.n_pts.values[w_idx].flatten().astype(np.uint32)
+
+        sigma_s_weight = (
+            ds.m_extinction.values[w_idx] * ds.albedo.values[w_idx]
+        ).flatten().astype(np.float64)
 
         return {
             "n_r": n_r,
@@ -110,32 +108,25 @@ class ParticlePhase(PhaseFunction):
             "phase_mueller": dr.scalar.ArrayXf64(mueller_raw.flatten()),
             "grid_start": grid_start,
             "grid_len": grid_len,
+            "sigma_s_weight": dr.scalar.ArrayXf64(sigma_s_weight),
         }
 
     @property
     def template(self) -> dict:
         return {
             "type": "particlephase",
-            "r_eff_volume": {
-                "type": "gridvolume",
-                "grid": mi.VolumeGrid(
-                    self.r_eff_volume.astype(np.float32).T[..., np.newaxis]
-                ),
-                "wrap_mode": self.wrap_mode,  # TBD improve config
-                "use_grid_bbox": True,
-                "filter_type": self.filter_type,
-                "to_world": self.grid.to_world,
-            },
-            "v_eff_volume": {
-                "type": "gridvolume",
-                "grid": mi.VolumeGrid(
-                    self.v_eff_volume.astype(np.float32).T[..., np.newaxis]
-                ),
-                "wrap_mode": self.wrap_mode,  # TBD improve config
-                "use_grid_bbox": True,
-                "filter_type": self.filter_type,
-                "to_world": self.grid.to_world,
-            },
+            "r_eff_volume": generate_gridvolume(
+                self.geometry,
+                self.r_eff_volume,
+                units=ureg.micron,
+                dtype=np.float64,
+            ),
+            "v_eff_volume": generate_gridvolume(
+                self.geometry,
+                self.v_eff_volume,
+                units=ureg.micron ** 2,
+                dtype=np.float64,
+            ),
             "r_eff_grid": mi.VolumeGrid(
                 self.r_eff_grid.astype(np.float32).reshape(1, 1, -1, 1)
             ),
@@ -161,6 +152,9 @@ class ParticlePhase(PhaseFunction):
                 )
             ),
             "blending_method": self.blending_method,
+            "sigma_s_weight": DictParameter(
+                lambda ctx: self._build_phase_parameters(ctx)["sigma_s_weight"]
+            ),
         }
 
     @property
@@ -184,6 +178,10 @@ class ParticlePhase(PhaseFunction):
                 lambda ctx: dr.scalar.ArrayXu(
                     self._build_phase_parameters(ctx)["grid_len"]
                 ),
+                KernelSceneParameterFlags.SPECTRAL,
+            ),
+            "sigma_s_weight": SceneParameter(
+                lambda ctx: self._build_phase_parameters(ctx)["sigma_s_weight"],
                 KernelSceneParameterFlags.SPECTRAL,
             ),
         }

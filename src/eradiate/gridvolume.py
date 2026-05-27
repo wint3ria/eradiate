@@ -141,15 +141,16 @@ def _postprocess_template(
         "filter_type": filter_type_kw,
         "wrap_mode": wrap_mode_kw,
     }
-    if isinstance(geometry, SphericalShellGeometry):
-        gridvolume = {
-            "type": "sphericalcoordsvolume",
-            "volume": gridvolume,
-            "rmin": geometry.atmosphere_volume_rmin,
-        }
     if geometry is not None:
         to_world = geometry.grid.to_world
         gridvolume["to_world"] = to_world
+    if isinstance(geometry, SphericalShellGeometry):
+        return {
+            "type": "sphericalcoordsvolume",
+            "volume": gridvolume,
+            "rmin": geometry.atmosphere_volume_rmin,
+            "to_world": geometry.atmosphere_volume_to_world,
+        }
     return gridvolume
 
 
