@@ -64,8 +64,6 @@ def make_aer_core_v2(
     ext: pint.Quantity,
     ssa: pint.Quantity,
     phase: pint.Quantity,
-    reff: pint.Quantity | None = None,
-    veff: pint.Quantity | None = None,
     nangles: np.ndarray | None = None,
     pmom: np.ndarray | None = None,
     nmom: int | np.ndarray | None = None,
@@ -75,8 +73,7 @@ def make_aer_core_v2(
     check: Literal["none", "fast", "full"] | None = None,
 ) -> xr.Dataset:
     """
-    Create a new dataset in the Aer-Core v2 format, or the Prt v1 format
-    when ``reff``/``veff`` are provided.
+    Create a new dataset in the Aer-Core v2 format.
 
     Parameters
     ----------
@@ -87,31 +84,323 @@ def make_aer_core_v2(
         Phase matrix component list, shape (nphamat,).
 
     mu : quantity
-        Scattering angle cosine, shape (nw, [nreff, nveff, ]nangle).
+        Scattering angle cosine, shape (nw, nangle).
 
     theta : quantity
-        Scattering angle, shape (nw, [nreff, nveff, ]nangle).
+        Scattering angle, shape (nw, nangle).
 
     ext : quantity
-        Extinction coefficient, shape (nw, [nreff, nveff]).
+        Extinction coefficient, shape (nw,).
 
     ssa : quantity
-        Single-scattering albedo, shape (nw, [nreff, nveff]).
+        Single-scattering albedo, shape (nw,).
 
     phase : quantity
-        Phase matrix values, shape (nphamat, nw, [nreff, nveff, ]nangle).
+        Phase matrix values, shape (nphamat, nw, nangle).
         Integral normalized to 2 (*i.e.* ∫ p(μ) dμ = 2).
 
-    reff, veff : quantity, optional
+    nangles : ndarray, optional
+        Number of valid angular samples per wavelength, shape (nw,), dtype int.
+        When provided, entries at indices ``>= nangles[iw]`` in ``mu``,
+        ``theta``, and ``phase`` must be NaN-padded.  The ``nangles`` dataset
+        variable is always written; if not provided, it is inferred by counting
+        non-NaN entries in the first phase matrix component.
+
+    pmom : ndarray, optional
+        Legendre polynomials for the (1,1) phase matrix element, shape
+        (nw, nimom).  If not provided, they are computed automatically from
+        ``phase`` and ``theta`` using :func:`.compute_pmom` with
+        ``coefficients=True``.
+
+    nmom : int or ndarray, optional
+        Controls the number of Legendre polynomials.  The ``nmom`` dataset
+        variable is always written when ``pmom`` is present.
+
+        * ``None`` (default) — when ``pmom`` is not provided, compute 129
+          coefficients and store their count as a uniform ``nmom`` array;
+          when ``pmom`` is provided explicitly, infer per-wavelength counts
+          by counting non-NaN entries in the first phase matrix component,
+          consistent with the NaN-padding convention.
+        * ``int`` — scalar moment count; used as the target for automatic
+          computation and stored as a uniform ``nmom`` array.
+        * ``ndarray`` shape ``(nw,)`` — per-wavelength count stored as-is.
+          ``pmom`` must be provided explicitly when ``nmom`` is an ndarray.
+
+    grid_res : int, default: 3
+        Angular grid resolution passed to :func:`.compute_pmom` when ``pmom``
+        is computed automatically. ``3`` uses the input grid with the exact
+        BDE method (recommended). See :func:`.compute_pmom` for all options.
+
+    attrs : dict
+        Dataset attributes.
+
+    normalize : bool, default: False
+        If ``True``, rescale the phase matrix so that ``p₁₁`` integrates to 2
+        over μ ∈ [-1, 1].  All phase matrix components are multiplied by the
+        same factor (2 / ∫p₁₁ dμ), preserving their relative magnitudes.
+        When ``False`` (default), the caller is responsible for providing a
+        pre-normalized ``phase`` array.
+
+    check : {"none", "fast", "full"}, optional
+        Controls validation of the ``mu`` angular grid sort order.
+
+        * ``None`` or ``"none"`` — no check (default).
+        * ``"fast"`` — sampling-based check: validates a random 10 % of
+          wavelengths (at least one). Intended as a cheap guard during bulk
+          production runs.
+        * ``"full"`` — validates every wavelength.
+
+        A ``ValueError`` is raised if any sampled row is not strictly
+        monotonically increasing in μ. Only the valid (non-NaN) portion of
+        each row is checked (bounded by ``nangles[iw]``).
+
+    Returns
+    -------
+    Dataset
+
+    Raises
+    ------
+    ValueError
+        If a value check fails, or if ``nmom`` is an ndarray but ``pmom`` is
+        not provided.
+    """
+    # nangles is always stored. Infer from the first phase matrix component when
+    # not provided: count non-NaN entries per wavelength.
+    if nangles is None:
+        nangles = _count_valid(phase.m[0])
+
+    if check is not None and check != "none":
+        mu_vals = mu.m  # (nw, nangle)
+        nw_check = mu_vals.shape[0]
+
+        if check == "fast":
+            rng = np.random.default_rng(seed=0)
+            n_sample = max(1, nw_check // 10)
+            iw_check = rng.choice(nw_check, size=n_sample, replace=False)
+        else:  # "full"
+            iw_check = np.arange(nw_check)
+
+        for iw in iw_check:
+            n = int(nangles[iw])
+            row = mu_vals[iw, :n]
+            if not np.all(np.diff(row) > 0):
+                raise ValueError(
+                    f"make_aer_core_v2(): mu is not strictly ascending at "
+                    f"wavelength index {iw}. Sort the angular grid in ascending "
+                    "mu order before calling this function."
+                )
+
+    if normalize:
+        phase_vals = phase.m.copy()  # (nphamat, nw, nangle)
+        mu_vals = mu.m  # (nw, nangle)
+        for iw in range(phase_vals.shape[1]):
+            n = int(nangles[iw])
+            mu_w = mu_vals[iw, :n]
+            p11_w = phase_vals[0, iw, :n]
+            integral = np.trapezoid(p11_w, mu_w)
+            if integral == 0.0:
+                raise ValueError(
+                    f"make_aer_core_v2(): p11 integrates to 0 at wavelength "
+                    f"index {iw}; cannot normalize."
+                )
+            phase_vals[:, iw, :n] *= 2.0 / integral
+        phase = phase_vals * phase.u
+
+    if pmom is None:
+        # Determine the scalar moment count for automatic computation.
+        if nmom is None:
+            _nmom_scalar = 129
+        elif isinstance(nmom, int):
+            _nmom_scalar = nmom
+        else:
+            raise ValueError(
+                "make_aer_core_v2(): 'nmom' must be an int or None when 'pmom' is "
+                "not provided. Pass an ndarray only together with an explicit 'pmom'."
+            )
+
+        # Compute pmom for p_11 (index 0) only.
+        # mu in the dataset is ascending (-1 → +1), so theta is descending
+        # (180° → 0°). compute_pmom() expects theta ascending (0° → 180°),
+        # so we reverse each per-wavelength slice.
+        theta_deg = theta.to("deg").magnitude  # (nw, nangle)
+        phase_vals = phase.m  # (nphamat, nw, nangle)
+        _nw = theta_deg.shape[0]
+
+        pmom = np.zeros((_nw, _nmom_scalar))
+        for iw in range(_nw):
+            n = int(nangles[iw])
+            theta_w = theta_deg[iw, :n][::-1]  # ascending 0° → 180°
+            phase_w = phase_vals[0, iw, :n][::-1]  # p_11 component
+            pmom[iw, :] = _compute_pmom(
+                theta_w,
+                phase_w,
+                nmom=_nmom_scalar,
+                grid_res=grid_res,
+                coefficients=True,
+                check_normalization=True,
+            )
+        nmom = np.full(_nw, _nmom_scalar, dtype=np.int32)
+
+    # nmom is always stored alongside pmom.
+    # Normalize any remaining scalar or inferred form to a per-wavelength array.
+    if nmom is None:
+        # pmom was provided explicitly without nmom: count non-NaN entries per
+        # wavelength, consistent with the NaN-padding convention.
+        nmom = _count_valid(pmom)
+    elif isinstance(nmom, int):
+        nmom = np.full(len(w.m), nmom, dtype=np.int32)
+
+    data_vars = {
+        "ext": (
+            "w",
+            ext.m,
+            {
+                "standard_name": "extinction_coefficient",
+                "long_name": "extinction coefficient",
+                "units": symbol(ext.u),
+            },
+        ),
+        "ssa": (
+            "w",
+            ssa.m,
+            {
+                "standard_name": "single_scattering_albedo",
+                "long_name": "single-scattering albedo",
+                "units": symbol(ssa.u),
+            },
+        ),
+        "phase": (
+            ["phamat", "w", "iangle"],
+            phase.m,
+            {
+                "standard_name": "phase_matrix",
+                "long_name": "phase matrix",
+                "units": symbol(phase.u),
+                "comment": "integral normalized to 2",
+            },
+        ),
+    }
+
+    data_vars["nangles"] = (
+        "w",
+        nangles,
+        {
+            "standard_name": "n_angular_samples",
+            "long_name": "number of angular samples",
+        },
+    )
+
+    data_vars["nmom"] = (
+        "w",
+        nmom,
+        {
+            "standard_name": "n_legendre_polys",
+            "long_name": "number of Legendre polynomials",
+        },
+    )
+
+    data_vars["pmom"] = (
+        ["w", "imom"],
+        pmom,
+        {
+            "standard_name": "legendre_polys",
+            "long_name": "Legendre polynomials",
+            "comment": "p11 component only; including factor 2l+1",
+        },
+    )
+
+    coords = {
+        "w": (
+            "w",
+            w.m,
+            {
+                "standard_name": "wavelength",
+                "long_name": "wavelength",
+                "units": symbol(w.u),
+            },
+        ),
+        "phamat": (
+            "phamat",
+            phamat,
+            {
+                "standard_name": "component",
+                "long_name": "phase matrix component",
+            },
+        ),
+        "mu": (
+            ["w", "iangle"],
+            mu.m,
+            {
+                "standard_name": "cos_scattering_angle",
+                "long_name": "scattering angle cosine",
+                "units": symbol(mu.u),
+            },
+        ),
+        "theta": (
+            ["w", "iangle"],
+            theta.m,
+            {
+                "standard_name": "scattering_angle",
+                "long_name": "scattering angle",
+                "units": symbol(theta.u),
+            },
+        ),
+    }
+
+    return xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs or {})
+
+
+def make_prt_cloud_v1(
+    w: pint.Quantity,
+    phamat: list[str],
+    mu: pint.Quantity,
+    theta: pint.Quantity,
+    ext: pint.Quantity,
+    ssa: pint.Quantity,
+    phase: pint.Quantity,
+    reff: pint.Quantity,
+    veff: pint.Quantity,
+    nangles: np.ndarray | None = None,
+    pmom: np.ndarray | None = None,
+    nmom: int | np.ndarray | None = None,
+    grid_res: int = 3,
+    attrs: dict | None = None,
+    normalize: bool = False,
+    check: Literal["none", "fast", "full"] | None = None,
+) -> xr.Dataset:
+    """
+    Create a new dataset in the Prt-Cloud v1 format.
+
+    Parameters
+    ----------
+    w : quantity
+        Wavelength, shape (nw,).
+
+    phamat : list of str
+        Phase matrix component list, shape (nphamat,).
+
+    mu : quantity
+        Scattering angle cosine, shape (nw, nreff, nveff, nangle).
+
+    theta : quantity
+        Scattering angle, shape (nw, nreff, nveff, nangle).
+
+    ext : quantity
+        Extinction coefficient, shape (nw, nreff, nveff).
+
+    ssa : quantity
+        Single-scattering albedo, shape (nw, nreff, nveff).
+
+    phase : quantity
+        Phase matrix values, shape (nphamat, nw, nreff, nveff, nangle).
+        Integral normalized to 2 (*i.e.* ∫ p(μ) dμ = 2).
+
+    reff, veff : quantity
         Effective radius and variance grids, shape (nreff,) and (nveff,),
-        each strictly increasing (need not be regularly spaced). When set,
-        the dataset is built in the Prt v1 format: all other arrays gain
-        the corresponding ``reff``/``veff`` dimensions, between ``w`` and
-        the angular/moment dimension. Both must be set together, or
-        neither.
+        each strictly increasing (need not be regularly spaced).
 
     nangles : ndarray, optional
-        Number of valid angular samples, shape (nw, [nreff, nveff]), dtype
+        Number of valid angular samples, shape (nw, nreff, nveff), dtype
         int. When provided, entries beyond ``nangles`` in ``mu``, ``theta``,
         and ``phase`` must be NaN-padded. The ``nangles`` dataset variable is
         always written; if not provided, it is inferred by counting non-NaN
@@ -119,7 +408,7 @@ def make_aer_core_v2(
 
     pmom : ndarray, optional
         Legendre polynomials for the (1,1) phase matrix element, shape
-        (nw, [nreff, nveff, ]nimom). If not provided, they are computed
+        (nw, nreff, nveff, nimom). If not provided, they are computed
         automatically from ``phase`` and ``theta`` using
         :func:`.compute_pmom` with ``coefficients=True``.
 
@@ -134,7 +423,7 @@ def make_aer_core_v2(
           with the NaN-padding convention.
         * ``int`` — scalar moment count; used as the target for automatic
           computation and stored as a uniform ``nmom`` array.
-        * ``ndarray`` shape ``(nw, [nreff, nveff])`` — count stored as-is.
+        * ``ndarray`` shape ``(nw, nreff, nveff)`` — count stored as-is.
           ``pmom`` must be provided explicitly when ``nmom`` is an ndarray.
 
     grid_res : int, default: 3
@@ -173,20 +462,12 @@ def make_aer_core_v2(
     ------
     ValueError
         If a value check fails, if ``nmom`` is an ndarray but ``pmom`` is
-        not provided, if only one of ``reff``/``veff`` is provided, or if
-        ``reff``/``veff`` are not strictly increasing.
+        not provided, or if ``reff``/``veff`` are not strictly increasing.
     """
-    if (reff is None) != (veff is None):
-        raise ValueError(
-            "make_aer_core_v2(): 'reff' and 'veff' must be provided together, "
-            "or not at all"
-        )
-    if reff is not None:
-        if len(reff.m) > 1 and np.any(np.diff(reff.m) <= 0):
-            raise ValueError("make_aer_core_v2(): 'reff' must be strictly increasing")
-        if len(veff.m) > 1 and np.any(np.diff(veff.m) <= 0):
-            raise ValueError("make_aer_core_v2(): 'veff' must be strictly increasing")
-    extra_dims = [] if reff is None else ["reff", "veff"]
+    if len(reff.m) > 1 and np.any(np.diff(reff.m) <= 0):
+        raise ValueError("make_prt_cloud_v1(): 'reff' must be strictly increasing")
+    if len(veff.m) > 1 and np.any(np.diff(veff.m) <= 0):
+        raise ValueError("make_prt_cloud_v1(): 'veff' must be strictly increasing")
 
     # nangles is always stored. Infer from the first phase matrix component when
     # not provided: count non-NaN entries along the angular dimension.
@@ -194,7 +475,7 @@ def make_aer_core_v2(
         nangles = _count_valid(phase.m[0])
 
     if check is not None and check != "none":
-        mu_vals = mu.m  # (nw, [nreff, nveff, ]nangle)
+        mu_vals = mu.m  # (nw, nreff, nveff, nangle)
         indices = list(np.ndindex(mu_vals.shape[:-1]))
 
         if check == "fast":
@@ -210,14 +491,14 @@ def make_aer_core_v2(
             row = mu_vals[idx][:n]
             if not np.all(np.diff(row) > 0):
                 raise ValueError(
-                    f"make_aer_core_v2(): mu is not strictly ascending at "
+                    f"make_prt_cloud_v1(): mu is not strictly ascending at "
                     f"index {idx}. Sort the angular grid in ascending "
                     "mu order before calling this function."
                 )
 
     if normalize:
-        phase_vals = phase.m.copy()  # (nphamat, nw, [nreff, nveff, ]nangle)
-        mu_vals = mu.m  # (nw, [nreff, nveff, ]nangle)
+        phase_vals = phase.m.copy()  # (nphamat, nw, nreff, nveff, nangle)
+        mu_vals = mu.m  # (nw, nreff, nveff, nangle)
         for idx in np.ndindex(mu_vals.shape[:-1]):
             n = int(nangles[idx])
             mu_pt = mu_vals[idx][:n]
@@ -225,7 +506,7 @@ def make_aer_core_v2(
             integral = np.trapezoid(phase_pt[0, :n], mu_pt)
             if integral == 0.0:
                 raise ValueError(
-                    f"make_aer_core_v2(): p11 integrates to 0 at index "
+                    f"make_prt_cloud_v1(): p11 integrates to 0 at index "
                     f"{idx}; cannot normalize."
                 )
             phase_pt[:, :n] *= 2.0 / integral
@@ -239,7 +520,7 @@ def make_aer_core_v2(
             _nmom_scalar = nmom
         else:
             raise ValueError(
-                "make_aer_core_v2(): 'nmom' must be an int or None when 'pmom' is "
+                "make_prt_cloud_v1(): 'nmom' must be an int or None when 'pmom' is "
                 "not provided. Pass an ndarray only together with an explicit 'pmom'."
             )
 
@@ -247,8 +528,8 @@ def make_aer_core_v2(
         # mu in the dataset is ascending (-1 → +1), so theta is descending
         # (180° → 0°). compute_pmom() expects theta ascending (0° → 180°),
         # so we reverse each slice.
-        theta_deg = theta.to("deg").magnitude  # (nw, [nreff, nveff, ]nangle)
-        phase_vals = phase.m  # (nphamat, nw, [nreff, nveff, ]nangle)
+        theta_deg = theta.to("deg").magnitude  # (nw, nreff, nveff, nangle)
+        phase_vals = phase.m  # (nphamat, nw, nreff, nveff, nangle)
         leading_shape = theta_deg.shape[:-1]
 
         pmom = np.zeros(leading_shape + (_nmom_scalar,))
@@ -277,7 +558,7 @@ def make_aer_core_v2(
 
     data_vars = {
         "ext": (
-            ["w", *extra_dims],
+            ["w", "reff", "veff"],
             ext.m,
             {
                 "standard_name": "extinction_coefficient",
@@ -286,7 +567,7 @@ def make_aer_core_v2(
             },
         ),
         "ssa": (
-            ["w", *extra_dims],
+            ["w", "reff", "veff"],
             ssa.m,
             {
                 "standard_name": "single_scattering_albedo",
@@ -295,7 +576,7 @@ def make_aer_core_v2(
             },
         ),
         "phase": (
-            ["phamat", "w", *extra_dims, "iangle"],
+            ["phamat", "w", "reff", "veff", "iangle"],
             phase.m,
             {
                 "standard_name": "phase_matrix",
@@ -307,7 +588,7 @@ def make_aer_core_v2(
     }
 
     data_vars["nangles"] = (
-        ["w", *extra_dims],
+        ["w", "reff", "veff"],
         nangles,
         {
             "standard_name": "n_angular_samples",
@@ -316,7 +597,7 @@ def make_aer_core_v2(
     )
 
     data_vars["nmom"] = (
-        ["w", *extra_dims],
+        ["w", "reff", "veff"],
         nmom,
         {
             "standard_name": "n_legendre_polys",
@@ -325,7 +606,7 @@ def make_aer_core_v2(
     )
 
     data_vars["pmom"] = (
-        ["w", *extra_dims, "imom"],
+        ["w", "reff", "veff", "imom"],
         pmom,
         {
             "standard_name": "legendre_polys",
@@ -353,7 +634,7 @@ def make_aer_core_v2(
             },
         ),
         "mu": (
-            ["w", *extra_dims, "iangle"],
+            ["w", "reff", "veff", "iangle"],
             mu.m,
             {
                 "standard_name": "cos_scattering_angle",
@@ -362,7 +643,7 @@ def make_aer_core_v2(
             },
         ),
         "theta": (
-            ["w", *extra_dims, "iangle"],
+            ["w", "reff", "veff", "iangle"],
             theta.m,
             {
                 "standard_name": "scattering_angle",
@@ -370,10 +651,7 @@ def make_aer_core_v2(
                 "units": symbol(theta.u),
             },
         ),
-    }
-
-    if reff is not None:
-        coords["reff"] = (
+        "reff": (
             "reff",
             reff.m,
             {
@@ -381,8 +659,8 @@ def make_aer_core_v2(
                 "long_name": "effective radius",
                 "units": symbol(reff.u),
             },
-        )
-        coords["veff"] = (
+        ),
+        "veff": (
             "veff",
             veff.m,
             {
@@ -390,7 +668,8 @@ def make_aer_core_v2(
                 "long_name": "effective variance",
                 "units": symbol(veff.u),
             },
-        )
+        ),
+    }
 
     return xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs or {})
 
@@ -467,7 +746,7 @@ def concat_particles_veff(datasets: list[xr.Dataset]) -> xr.Dataset:
     nmom = np.concatenate([ds["nmom"].values for ds in datasets], axis=2)
     veff = np.concatenate([ds["veff"].values for ds in datasets])
 
-    return make_aer_core_v2(
+    return make_prt_cloud_v1(
         w=to_quantity(ref["w"]),
         phamat=list(ref["phamat"].values),
         mu=mu * ureg(ref["mu"].attrs["units"]),
@@ -805,6 +1084,25 @@ def libradtran_to_aer_core_v2(
     # Add metadata
     attrs = attrs or ds.attrs
 
+    if has_reff:
+        return make_prt_cloud_v1(
+            w=w,
+            phamat=phamat,
+            mu=mu,
+            theta=theta,
+            ext=ext,
+            ssa=ssa,
+            phase=phase,
+            reff=reff,
+            veff=veff_arg,
+            nmom=nmom,
+            pmom=pmom,
+            nangles=nangles_out,
+            attrs=attrs,
+            normalize=normalize,
+            check=check,
+        )
+
     return make_aer_core_v2(
         w=w,
         phamat=phamat,
@@ -816,8 +1114,6 @@ def libradtran_to_aer_core_v2(
         nmom=nmom,
         pmom=pmom,
         nangles=nangles_out,
-        reff=reff,
-        veff=veff_arg,
         attrs=attrs,
         normalize=normalize,
         check=check,
