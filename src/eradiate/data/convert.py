@@ -395,9 +395,13 @@ def make_prt_cloud_v1(
         Phase matrix values, shape (nphamat, nw, nreff, nveff, nangle).
         Integral normalized to 2 (*i.e.* ∫ p(μ) dμ = 2).
 
-    reff, veff : quantity
-        Effective radius and variance grids, shape (nreff,) and (nveff,),
-        each strictly increasing (need not be regularly spaced).
+    reff : quantity
+        Effective radius grid, shape (nreff,). Supports strictly increasing,
+        irregular grids of effective radius values.
+
+    veff : quantity
+        Effective variance grid, shape (nveff,). Supports strictly increasing,
+        irregular grids of effective variance values.
 
     nangles : ndarray, optional
         Number of valid angular samples, shape (nw, nreff, nveff), dtype
@@ -701,7 +705,7 @@ def concat_particles_veff(datasets: list[xr.Dataset]) -> xr.Dataset:
     xr.Dataset
         Prt-Cloud v1 dataset with a ``veff`` dimension spanning the concatenation
         of all input datasets' ``veff`` values. ``iangle``/``imom`` are
-        padded to the largest size found across inputs. Only attrs common
+        padded to the largest size found across inputs. Only attributes common
         to all input datasets are retained.
 
     Raises
