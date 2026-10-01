@@ -222,7 +222,7 @@ def make_aer_core_v2(
         # mu in the dataset is ascending (-1 → +1), so theta is descending
         # (180° → 0°). compute_pmom() expects theta ascending (0° → 180°),
         # so we reverse each per-wavelength slice.
-        theta_deg = theta.to("deg").magnitude  # (nw, nangle)
+        theta_deg = theta.m_as(ureg.deg)  # (nw, nangle)
         phase_vals = phase.m  # (nphamat, nw, nangle)
         _nw = theta_deg.shape[0]
 
@@ -528,7 +528,7 @@ def make_prt_cloud_v1(
         # mu in the dataset is ascending (-1 → +1), so theta is descending
         # (180° → 0°). compute_pmom() expects theta ascending (0° → 180°),
         # so we reverse each slice.
-        theta_deg = theta.to("deg").magnitude  # (nw, nreff, nveff, nangle)
+        theta_deg = theta.m_as(ureg.deg)  # (nw, nreff, nveff, nangle)
         phase_vals = phase.m  # (nphamat, nw, nreff, nveff, nangle)
         leading_shape = theta_deg.shape[:-1]
 
@@ -833,7 +833,7 @@ def aer_v1_to_aer_core_v2(
     if dtype:
         mu = mu.astype(dtype)
     mu = mu * ureg("dimensionless")
-    theta = (np.arccos(mu.m) * ureg("rad")).to("deg")
+    theta = (np.arccos(mu.m) * ureg.rad).to(ureg.deg)
 
     _phase_datasets = {}
     for ij, (i, j) in PHAMAT_TO_IDX:
