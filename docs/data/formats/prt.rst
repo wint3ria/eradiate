@@ -2,6 +2,8 @@ Particles
 =========
 
 
+.. _sec-data-formats-prt_core_v1:
+
 Prt-Core v1 [``prt_core_v1``]
 -----------------------------
 
@@ -113,9 +115,11 @@ Normalization conventions
 
 .. see-also::
 
-   The the full specification of the ``aer_core_v2`` format 
-   :ref:`_sec-data-formats-aer_core_v2`
+   The full specification of the ``aer_core_v2`` format:
+   :ref:`sec-data-formats-aer_core_v2`
 
+
+.. _sec-data-formats-prt_cloud_v1:
 
 Prt-Cloud v1 [``prt_cloud_v1``]
 -------------------------------

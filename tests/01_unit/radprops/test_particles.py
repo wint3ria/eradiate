@@ -98,7 +98,7 @@ VEFF = np.array([0.05, 0.15])  # dimensionless
 
 def make_size_distribution_dataset() -> xr.Dataset:
     """
-    Build a minimal Prt v1-shaped dataset (``reff``/``veff`` dimensions
+    Build a minimal Prt-Cloud v1-shaped dataset (``reff``/``veff`` dimensions
     added to the Aer-Core v2 layout) for ``ParticleProperties``.
 
     ``ext``/``ssa`` take a distinct value at every ``(w, reff, veff)`` grid
@@ -155,7 +155,7 @@ def make_size_distribution_dataset() -> xr.Dataset:
 
 def make_size_distribution_dataset_ragged() -> xr.Dataset:
     """
-    Prt v1-shaped dataset where the native angular grid differs across the
+    Prt-Cloud v1-shaped dataset where the native angular grid differs across the
     ``(w, reff, veff)`` grid, to exercise ``eval_phase_grid()``'s per-point
     raggedness/padding handling. Two wavelengths, two ``reff`` points, one
     ``veff`` point.
@@ -334,12 +334,12 @@ class TestParticleProperties:
     def test_has_size_distribution_false_for_aer_core_v2(self, pp):
         assert pp.has_size_distribution is False
 
-    def test_has_size_distribution_true_for_prt_v1(self):
+    def test_has_size_distribution_true_for_prt_cloud_v1(self):
         pp = ParticleProperties(data=make_size_distribution_dataset())
         assert pp.has_size_distribution is True
 
     class TestEvalPhaseGrid:
-        def test_eval_phase_raises_on_prt_v1(self):
+        def test_eval_phase_raises_on_prt_cloud_v1(self):
             """eval_phase() refuses a dataset with 'reff'/'veff' dimensions."""
             pp = ParticleProperties(data=make_size_distribution_dataset())
             with pytest.raises(ValueError, match="eval_phase_grid"):
@@ -614,7 +614,7 @@ class TestParticleProperties:
             np.testing.assert_allclose(result.m, expected, rtol=1e-10)
 
         def test_preserves_reff_veff_dims(self):
-            """On a Prt v1 dataset, result keeps the 'reff'/'veff' dimensions."""
+            """On a Prt-Cloud v1 dataset, result keeps the 'reff'/'veff' dimensions."""
             ds = make_size_distribution_dataset()
             pp = ParticleProperties(data=ds)
             w = np.array([475.0, 625.0]) * ureg.nm  # midpoints of both segments
@@ -655,7 +655,7 @@ class TestParticleProperties:
             np.testing.assert_allclose(result.m, expected, rtol=1e-10)
 
         def test_preserves_reff_veff_dims(self):
-            """On a Prt v1 dataset, result keeps the 'reff'/'veff' dimensions,
+            """On a Prt-Cloud v1 dataset, result keeps the 'reff'/'veff' dimensions,
             with the extinction-weighted formula applied independently at
             each (reff, veff) grid point."""
             ds = make_size_distribution_dataset()

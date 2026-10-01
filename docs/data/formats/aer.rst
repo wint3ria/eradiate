@@ -122,7 +122,7 @@ Normalization conventions
       * ``imom``
       * ``nmommax``
 
-.. _sec-data-formats-prt_v1:
+.. _sec-data-formats-aer_v1:
 
 Aer v1 (legacy) [``aer_v1``]
 ----------------------------
@@ -193,7 +193,8 @@ The following conversion components are provided:
       * Aer-Core v2
     - * :func:`.libradtran_to_aer_core_v2`
       * libRadtran / MOPSMAP
-      * Aer-Core v2
+      * Aer-Core v2, or :ref:`sec-data-formats-prt_cloud_v1` when the input
+        varies over ``reff``
     - * :func:`.libradtran_to_aer_v1`
       * libRadtran / MOPSMAP
       * Aer v1

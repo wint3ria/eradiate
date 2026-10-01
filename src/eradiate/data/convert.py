@@ -686,21 +686,20 @@ def _shared_attrs(datasets: list[xr.Dataset]) -> dict:
 
 def concat_particles_veff(datasets: list[xr.Dataset]) -> xr.Dataset:
     """
-    Concatenate several Prt v1 datasets along the ``veff`` dimension.
+    Concatenate several Prt-Cloud v1 datasets along the ``veff`` dimension.
 
     Parameters
     ----------
     datasets : list of xr.Dataset
-        Prt v1 datasets (as produced by :func:`make_aer_core_v2` with
-        ``reff``/``veff`` set), each with a ``reff``/``veff``-dimensioned
-        layout. Every dataset may cover one or several ``veff`` values. All
-        datasets must share the same ``w``, ``reff``, and ``phamat``
-        coordinates.
+        Prt-Cloud v1 datasets (as produced by :func:`make_prt_cloud_v1`),
+        each with a ``reff``/``veff``-dimensioned layout. Every dataset may
+        cover one or several ``veff`` values. All datasets must share the
+        same ``w``, ``reff``, and ``phamat`` coordinates.
 
     Returns
     -------
     xr.Dataset
-        Prt v1 dataset with a ``veff`` dimension spanning the concatenation
+        Prt-Cloud v1 dataset with a ``veff`` dimension spanning the concatenation
         of all input datasets' ``veff`` values. ``iangle``/``imom`` are
         padded to the largest size found across inputs. Only attrs common
         to all input datasets are retained.
@@ -908,7 +907,7 @@ def libradtran_to_aer_core_v2(
 ) -> xr.Dataset:
     """
     Convert a libRadtran scattering particle property dataset to Aer-Core v2,
-    or to Prt v1 when ``ds`` varies over ``reff``.
+    or to Prt-Cloud v1 when ``ds`` varies over ``reff``.
 
     Parameters
     ----------
@@ -927,14 +926,14 @@ def libradtran_to_aer_core_v2(
 
     normalize : bool, default: False
         If ``True``, rescale the phase matrix so that ``p₁₁`` integrates to 2
-        over μ ∈ [-1, 1].  Passed to :func:`make_aer_core_v2`; see that
-        function for details.
+        over μ ∈ [-1, 1].  Passed to :func:`make_aer_core_v2` or
+        :func:`make_prt_cloud_v1`; see those functions for details.
 
     check : {"none", "fast", "full"}, default: "full"
         Apply validation checks to the output.
 
     veff : float, optional
-        The effective variance used to build Prt v1 output. When ``ds`` has
+        The effective variance used to build Prt-Cloud v1 output. When ``ds`` has
         a ``reff`` dimension and ``veff`` is not given, it defaults to
         ``1 / (param_alpha + 3)``, the standard gamma-distribution relation,
         computed from ``ds.attrs["param_alpha"]``.
@@ -951,7 +950,7 @@ def libradtran_to_aer_core_v2(
       dataset is constructed as the union of the libRadtran grids for all
       coefficients; all coefficients are then interpolated linearly in μ space
       on the angular points that were missing for them. The same construction
-      applies independently at each ``reff`` point for Prt v1 output.
+      applies independently at each ``reff`` point for Prt-Cloud v1 output.
     """
     PHAMAT_TO_IDX = [
         # Coefficients for spherical particles

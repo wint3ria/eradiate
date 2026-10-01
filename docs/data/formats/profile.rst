@@ -10,7 +10,7 @@ Sparse, per-voxel description of a spatially varying particle field.
 Typically used for clouds. Each entry describes one populated voxel: its
 grid cell indices, the local particle size distribution parameters, and the
 mass concentration used to scale optical properties looked up from a
-:ref:`Prt v1 <sec-data-formats-prt_v1>` dataset.
+:ref:`Prt-Cloud v1 <sec-data-formats-prt_cloud_v1>` dataset.
 
 The grid is described by the ``x_levels``/``y_levels``/``z_levels`` arrays of
 cell edges along each axis. The profile is defined on either a Cartesian

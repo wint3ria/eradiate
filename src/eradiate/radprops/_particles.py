@@ -289,8 +289,8 @@ class ParticleProperties:
         Returns
         -------
         bool
-            ``True`` iff ``data`` has ``reff``/``veff`` dimensions (Prt
-            v1 format), ``False`` for a plain Aer-Core v2 dataset.
+            ``True`` iff ``data`` has ``reff``/``veff`` dimensions
+            (Prt-Cloud v1 format), ``False`` for a plain Aer-Core v2 dataset.
         """
         return "reff" in self.data.dims and "veff" in self.data.dims
 
