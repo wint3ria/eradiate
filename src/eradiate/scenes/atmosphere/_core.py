@@ -30,7 +30,7 @@ from ..._factory import Factory
 from ..._mode import get_mode
 from ...attrs import define, documented, get_doc
 from ...contexts import KernelContext
-from ...grid import GridCoords
+from ...grid import SpatialGrid
 from ...kernel import (
     KernelSceneParameterFlags,
     SceneParameter,
@@ -433,7 +433,7 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
     def eval_radprops(
         self,
         si: SpectralIndex,
-        grid: GridCoords | None = None,
+        grid: SpatialGrid | None = None,
         optional_fields: bool = False,
     ) -> xr.Dataset:
         """
@@ -444,7 +444,7 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
         si : .SpectralIndex
             Spectral index.
 
-        grid : .GridCoords, optional
+        grid : .SpatialGrid, optional
             Altitude grid on which evaluation is performed. If unset, an
             instance-specific default is used
             (see :meth:`grid <.AbstractHeterogeneousAtmosphere.geometry.grid>`).
@@ -556,7 +556,7 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
 
     @abstractmethod
     def eval_albedo(
-        self, si: SpectralIndex, grid: GridCoords | None = None
+        self, si: SpectralIndex, grid: SpatialGrid | None = None
     ) -> pint.Quantity:
         """
         Evaluate albedo spectrum based on a spectral context. This method
@@ -568,7 +568,7 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
         si : :class:`.SpectralIndex`
             Spectral index.
 
-        grid : .GridCoords, optional
+        grid : .SpatialGrid, optional
             Altitude grid on which evaluation is performed. If unset, an
             instance-specific default is used
             (see :meth:`grid <.AbstractHeterogeneousAtmosphere.geometry.grid>`).
@@ -582,7 +582,7 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
 
     @abstractmethod
     def eval_sigma_t(
-        self, si: SpectralIndex, grid: GridCoords | None = None
+        self, si: SpectralIndex, grid: SpatialGrid | None = None
     ) -> pint.Quantity:
         """
         Evaluate extinction coefficient given a spectral context.
@@ -592,7 +592,7 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
         si : :class:`.SpectralIndex`
             Spectral index.
 
-        grid : .GridCoords, optional
+        grid : .SpatialGrid, optional
             Altitude grid on which evaluation is performed. If unset, an
             instance-specific default is used
             (see :meth:`grid <.AbstractHeterogeneousAtmosphere.geometry.grid>`).
@@ -605,7 +605,7 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
 
     @abstractmethod
     def eval_sigma_a(
-        self, si: SpectralIndex, grid: GridCoords | None = None
+        self, si: SpectralIndex, grid: SpatialGrid | None = None
     ) -> pint.Quantity:
         """
         Evaluate absorption coefficient given a spectral context.
@@ -615,7 +615,7 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
         si : :class:`.SpectralIndex`
             Spectral index.
 
-        grid : .GridCoords, optional
+        grid : .SpatialGrid, optional
             Altitude grid on which evaluation is performed. If unset, an
             instance-specific default is used
             (see :meth:`grid <.AbstractHeterogeneousAtmosphere.column.grid>`).
@@ -628,7 +628,7 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
 
     @abstractmethod
     def eval_sigma_s(
-        self, si: SpectralIndex, grid: GridCoords | None = None
+        self, si: SpectralIndex, grid: SpatialGrid | None = None
     ) -> pint.Quantity:
         """
         Evaluate scattering coefficient given a spectral context.
@@ -638,7 +638,7 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
         si : :class:`.SpectralIndex`
             Spectral index.
 
-        grid : .GridCoords, optional
+        grid : .SpatialGrid, optional
             Altitude grid on which evaluation is performed. If unset, an
             instance-specific default is used
             (see :meth:`grid <.AbstractHeterogeneousAtmosphere.geometry.grid>`).

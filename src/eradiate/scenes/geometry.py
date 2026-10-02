@@ -14,7 +14,7 @@ from .shapes import CuboidShape, RectangleShape, Shape, SphereShape
 from .. import _repr_diagrams
 from ..attrs import define, documented
 from ..constants import EARTH_RADIUS
-from ..grid import GridCoords, SphericalShellGridCoords
+from ..grid import SpatialGrid, SphericalGrid
 from ..kernel import map_cube, map_unit_cube
 from ..units import unit_context_config as ucc
 from ..units import unit_context_kernel as uck
@@ -73,22 +73,22 @@ class SceneGeometry(ABC):
         init_type="float or quantity, optional",
     )
 
-    grid: GridCoords = documented(
+    grid: SpatialGrid = documented(
         attrs.field(
             default=None,
             converter=attrs.converters.optional(
-                lambda x: GridCoords.convert(x) if not isinstance(x, GridCoords) else x
+                lambda x: SpatialGrid.convert(x) if not isinstance(x, SpatialGrid) else x
             ),
             validator=attrs.validators.optional(
-                attrs.validators.instance_of(GridCoords)
+                attrs.validators.instance_of(SpatialGrid)
             ),
         ),
         doc="The altitude mesh on which the radiative properties of "
         "heterogeneous atmosphere components are evaluated. "
         "If unset, a default grid with one layer per 100 m (or 10 layers if "
         "the atmosphere object height is less than 100 m) is used.",
-        type=".GridCoords",
-        init_type=".GridCoords, quantity or ndarray, optional",
+        type=".SpatialGrid",
+        init_type=".SpatialGrid, quantity or ndarray, optional",
     )
 
     filter_type: FilterType = documented(
@@ -275,7 +275,7 @@ class PlaneParallelGeometry(SceneGeometry):
             top = self.toa_altitude
             step = min(100.0 * ureg.m, (top - bottom) / 10.0)
 
-            self.grid = GridCoords.make_onedim_arange(top, bottom, step, self.width)
+            self.grid = SpatialGrid.make_onedim_arange(top, bottom, step, self.width)
 
 
 @define
@@ -336,7 +336,7 @@ class SphericalShellGeometry(SceneGeometry):
             bottom = self.ground_altitude.m_as(ureg.m)
             top = self.toa_altitude.m_as(ureg.m)
             step = min(100.0, (top - bottom) / 10.0)
-            self.grid = SphericalShellGridCoords(
+            self.grid = SphericalGrid(
                 levels=ureg.convert(
                     np.arange(bottom, top + step * 0.1, step),
                     ureg.m,

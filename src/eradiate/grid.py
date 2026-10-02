@@ -20,7 +20,7 @@ from .units import unit_registry as ureg
 
 
 @frozen(eq=False, init=False)
-class GridCoords(ABC):
+class SpatialGrid(ABC):
     """
     Abstract coordinate grid for an atmosphere, expressed in 3 dimensions (X, Y and Z).
 
@@ -80,16 +80,16 @@ class GridCoords(ABC):
     @staticmethod
     def make_onedim_from_levels(levels: pint.Quantity):
         """
-        Build a plane parallel 1D GridCoords using provided ``levels`` to
+        Build a plane parallel 1D SpatialGrid using provided ``levels`` to
         define the vertical extent and the horizontal extent comes from
         Eradiate's default atmosphere width
         """
 
         ensure_units(levels, default_units=ucc.get("length"))
 
-        default = GridCoords.make_default()
+        default = SpatialGrid.make_default()
 
-        return PlaneParallelGridCoords(
+        return CartesianGrid(
             levels=levels,
             edges_x=default.edges_x,
             edges_y=default.edges_y,
@@ -103,7 +103,7 @@ class GridCoords(ABC):
         width: pint.Quantity,
     ):
         """
-        Build a plane parallel 1D GridCoords using ``width`` for horizontal
+        Build a plane parallel 1D SpatialGrid using ``width`` for horizontal
         extents and the provided ``top`` and ``bottom`` altitude for the vertical coordinate.
 
         Parameters
@@ -119,7 +119,7 @@ class GridCoords(ABC):
 
         Returns
         -------
-        PlaneParallelGridCoords
+        CartesianGrid
             Constructed coords grid
         """
 
@@ -135,7 +135,7 @@ class GridCoords(ABC):
             ucc.get("length"),
         )
 
-        return PlaneParallelGridCoords.from_extent_and_resolution(
+        return CartesianGrid.from_extent_and_resolution(
             levels=levels,
             extent_x=width,
             extent_y=width,
@@ -146,7 +146,7 @@ class GridCoords(ABC):
     @staticmethod
     def make_default():
         """
-        Build the default plane parallel 1D GridCoords for Eradiate
+        Build the default plane parallel 1D SpatialGrid for Eradiate
         atmospheres.
 
         Bottom altitude is set to zero and top at 120 km. Each layer is 100m high.
@@ -158,14 +158,14 @@ class GridCoords(ABC):
         step = 100.0 * ureg.m
         width = 1e6 * ureg.km
 
-        return GridCoords.make_onedim_arange(top, bottom, step, width)
+        return SpatialGrid.make_onedim_arange(top, bottom, step, width)
 
     @classmethod
     def convert(cls, value: t.Any) -> t.Any:
         """
-        Convert dictionary type of parameters to a GridCoords.
+        Convert dictionary type of parameters to a SpatialGrid.
 
-        Returns the default plane parallel ``GridCoords`` if value
+        Returns the default plane parallel ``SpatialGrid`` if value
         is ``"plane_parallel_coords"``. If value is a ``pint.Quantity``,
         attempts to construct a 1D atmosphere with the layer altitudes
         contained in the quantity. If value is a ``np.ndarray``, interpret it
@@ -182,7 +182,7 @@ class GridCoords(ABC):
 
         Returns
         -------
-        GridCoords
+        SpatialGrid
             Constructed grid
         """
         if isinstance(value, str):
@@ -193,9 +193,9 @@ class GridCoords(ABC):
             value = value.copy()
             value_t = value.pop("type")
             if value_t == "plane_parallel_coords":
-                return PlaneParallelGridCoords(**value)
+                return CartesianGrid(**value)
             elif value_t == "spherical_shell_coords":
-                return SphericalShellGridCoords(**value)
+                return SphericalGrid(**value)
         elif isinstance(value, pint.Quantity):
             return cls.make_onedim_from_levels(value)
         elif isinstance(value, np.ndarray):
@@ -317,7 +317,7 @@ class GridCoords(ABC):
 
 
 @frozen(eq=False, init=False)
-class PlaneParallelGridCoords(GridCoords):
+class CartesianGrid(SpatialGrid):
     """
     Plane parallel grid coordinates [``plane_parallel_coords``].
 
@@ -544,7 +544,7 @@ class PlaneParallelGridCoords(GridCoords):
 
     def __repr__(self) -> str:
         return (
-            f"PlaneParallelGridCoords(\n"
+            f"CartesianGrid(\n"
             f"  x: [{self.edges_x[0]:~P}, {self.edges_x[-1]:~P}], {self.n_cells_x} cells\n"
             f"  y: [{self.edges_y[0]:~P}, {self.edges_y[-1]:~P}], {self.n_cells_y} cells\n"
             f"  z: [{self.levels[0]:~P}, {self.levels[-1]:~P}], {self.n_layers} layers\n"
@@ -600,7 +600,7 @@ class PlaneParallelGridCoords(GridCoords):
         extent_y: pint.Quantity,
         n_cells_x: int,
         n_cells_y: int,
-    ) -> PlaneParallelGridCoords:
+    ) -> CartesianGrid:
         """
         Construct from domain extents and cell counts, centred at the origin.
 
@@ -619,7 +619,7 @@ class PlaneParallelGridCoords(GridCoords):
 
         Returns
         -------
-        PlaneParallelGridCoords
+        CartesianGrid
         """
         extent_x = ensure_units(extent_x, default_units=ucc.get("length"))
         extent_y = ensure_units(extent_y, default_units=ucc.get("length"))
@@ -638,7 +638,7 @@ class PlaneParallelGridCoords(GridCoords):
         cell_width: pint.Quantity,
         cell_length: pint.Quantity,
         atol: pint.Quantity | None = None,
-    ) -> PlaneParallelGridCoords:
+    ) -> CartesianGrid:
         """
         Construct from domain extents and cell sizes, centred at the origin.
 
@@ -664,7 +664,7 @@ class PlaneParallelGridCoords(GridCoords):
 
         Returns
         -------
-        PlaneParallelGridCoords
+        CartesianGrid
         """
         extent_x = ensure_units(extent_x, default_units=ucc.get("length"))
         extent_y = ensure_units(extent_y, default_units=ucc.get("length"))
@@ -689,7 +689,7 @@ class PlaneParallelGridCoords(GridCoords):
         cell_length: pint.Quantity,
         n_cells_x: int,
         n_cells_y: int,
-    ) -> PlaneParallelGridCoords:
+    ) -> CartesianGrid:
         """
         Construct from cell sizes and counts, centred at the origin.
 
@@ -710,7 +710,7 @@ class PlaneParallelGridCoords(GridCoords):
 
         Returns
         -------
-        PlaneParallelGridCoords
+        CartesianGrid
         """
         cell_width = ensure_units(cell_width, default_units=ucc.get("length"))
         cell_length = ensure_units(cell_length, default_units=ucc.get("length"))
@@ -727,7 +727,7 @@ class PlaneParallelGridCoords(GridCoords):
         self,
         n_x: int,
         n_y: int,
-    ) -> PlaneParallelGridCoords:
+    ) -> CartesianGrid:
         """
         Extend the grid symmetrically by appending cells on each side.
 
@@ -744,7 +744,7 @@ class PlaneParallelGridCoords(GridCoords):
 
         Returns
         -------
-        PlaneParallelGridCoords
+        CartesianGrid
             New instance with extended edges.
         """
 
@@ -763,7 +763,7 @@ class PlaneParallelGridCoords(GridCoords):
         extent_x: pint.Quantity,
         extent_y: pint.Quantity,
         atol: pint.Quantity | None = None,
-    ) -> PlaneParallelGridCoords:
+    ) -> CartesianGrid:
         """
         Extend the grid symmetrically by a physical margin on each side.
 
@@ -782,7 +782,7 @@ class PlaneParallelGridCoords(GridCoords):
 
         Returns
         -------
-        PlaneParallelGridCoords
+        CartesianGrid
             New instance with extended edges.
         """
         extent_x = ensure_units(extent_x, default_units=ucc.get("length"))
@@ -799,7 +799,7 @@ class PlaneParallelGridCoords(GridCoords):
         self,
         n_cells_x: int,
         n_cells_y: int,
-    ) -> PlaneParallelGridCoords:
+    ) -> CartesianGrid:
         """
         Resample the grid to a new resolution, preserving the extent.
 
@@ -812,7 +812,7 @@ class PlaneParallelGridCoords(GridCoords):
 
         Returns
         -------
-        PlaneParallelGridCoords
+        CartesianGrid
             New instance with the same extent but different resolution.
         """
         edges_x = np.linspace(self.edges_x[0], self.edges_x[-1], n_cells_x + 1)
@@ -825,7 +825,7 @@ class PlaneParallelGridCoords(GridCoords):
         cell_width: pint.Quantity,
         cell_length: pint.Quantity,
         atol: pint.Quantity | None = None,
-    ) -> PlaneParallelGridCoords:
+    ) -> CartesianGrid:
         """
         Resample the grid to a new cell size, preserving the extent.
 
@@ -840,7 +840,7 @@ class PlaneParallelGridCoords(GridCoords):
 
         Returns
         -------
-        PlaneParallelGridCoords
+        CartesianGrid
             New instance with the same extent but different cell size.
         """
         cell_width = ensure_units(cell_width, default_units=ucc.get("length"))
@@ -859,7 +859,7 @@ class PlaneParallelGridCoords(GridCoords):
         self,
         extent_x: pint.Quantity,
         extent_y: pint.Quantity,
-    ) -> PlaneParallelGridCoords:
+    ) -> CartesianGrid:
         """
         Crop the grid symmetrically to a smaller extent.
 
@@ -875,7 +875,7 @@ class PlaneParallelGridCoords(GridCoords):
 
         Returns
         -------
-        PlaneParallelGridCoords
+        CartesianGrid
             New instance with reduced extent.
 
         Raises
@@ -923,13 +923,13 @@ class PlaneParallelGridCoords(GridCoords):
 
         return self.__class__(levels=self.levels, edges_x=edges_x, edges_y=edges_y)
 
-    def centered(self) -> PlaneParallelGridCoords:
+    def centered(self) -> CartesianGrid:
         """
         Return a new grid with the same cell size and count, centred at zero.
 
         Returns
         -------
-        PlaneParallelGridCoords
+        CartesianGrid
             New instance centred at the origin.
         """
         edges_x = self._make_centered_edges(self.total_width, self.n_cells_x)
@@ -937,7 +937,7 @@ class PlaneParallelGridCoords(GridCoords):
 
         return self.__class__(levels=self.levels, edges_x=edges_x, edges_y=edges_y)
 
-    def single_column(self) -> PlaneParallelGridCoords:
+    def single_column(self) -> CartesianGrid:
         """
         Collapse the grid to a single horizontal cell.
 
@@ -946,7 +946,7 @@ class PlaneParallelGridCoords(GridCoords):
 
         Returns
         -------
-        PlaneParallelGridCoords
+        CartesianGrid
             New instance with a single cell in X and Y.
         """
         return self.__class__(
@@ -965,7 +965,7 @@ class PlaneParallelGridCoords(GridCoords):
 
 
 @frozen(eq=False, init=False)
-class SphericalShellGridCoords(GridCoords):
+class SphericalGrid(SpatialGrid):
     """
     Spherical shell grid coordinates [``spherical_shell_coords``].
 
@@ -1122,7 +1122,7 @@ class SphericalShellGridCoords(GridCoords):
 
     def __repr__(self) -> str:
         return (
-            f"SphericalShellGridCoords(\n"
+            f"SphericalGrid(\n"
             f"  azimuth:    [{self.azimuths[0]:~P}, {self.azimuths[-1]:~P}], {self.n_cells_x} sectors\n"
             f"  colatitude: [{self.colatitudes[0]:~P}, {self.colatitudes[-1]:~P}], {self.n_cells_y} bands\n"
             f"  z:          [{self.levels[0]:~P}, {self.levels[-1]:~P}], {self.n_layers} layers\n"
