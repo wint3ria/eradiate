@@ -169,6 +169,16 @@ def _upsample_mu(mu: np.ndarray, n_out: int) -> np.ndarray:
     return np.sort(np.concatenate([mu, new_pts]))
 
 
+def _broadcast_t(t: np.ndarray, reference: np.ndarray) -> np.ndarray:
+    """
+    Reshape a per-wavelength interpolation weight ``t`` (shape ``(nw,)``)
+    so that it broadcasts against ``reference`` (shape ``(nw, ...)``)
+    along its leading axis, instead of numpy's default trailing-axis
+    alignment.
+    """
+    return t.reshape(t.shape + (1,) * (reference.ndim - t.ndim))
+
+
 _resolve_keyword = converters.resolve_keyword(lambda x: f"aerosol/{x}.nc")
 _resolve_path = converters.resolve_path
 
@@ -494,15 +504,6 @@ class ParticleProperties:
         all_full = bool(np.all(nangles == n_iangle))
         return all_full and bool(np.all(mu_vals == mu_vals[[0]]))
 
-    @staticmethod
-    def _broadcast_t(t: np.ndarray, reference: np.ndarray) -> np.ndarray:
-        """
-        Reshape a per-wavelength interpolation weight ``t`` (shape ``(nw,)``)
-        so that it broadcasts against ``reference`` (shape ``(nw, ...)``)
-        along its leading axis, instead of numpy's default trailing-axis
-        alignment.
-        """
-        return t.reshape(t.shape + (1,) * (reference.ndim - t.ndim))
 
     def eval_ext(self, w: pint.Quantity) -> pint.Quantity:
         """
@@ -523,7 +524,7 @@ class ParticleProperties:
         idx_l, idx_r, t = self._locate(w)
         ext = self.ext.m
         ext_l, ext_r = ext[idx_l], ext[idx_r]
-        t = self._broadcast_t(t, ext_l)
+        t = _broadcast_t(t, ext_l)
         ext_interp = (1.0 - t) * ext_l + t * ext_r
         return ext_interp * self.ext.units
 
@@ -559,7 +560,7 @@ class ParticleProperties:
         ssa = self.ssa.m
         ext_l, ext_r = ext[idx_l], ext[idx_r]
         ssa_l, ssa_r = ssa[idx_l], ssa[idx_r]
-        t = self._broadcast_t(t, ext_l)
+        t = _broadcast_t(t, ext_l)
         ext_interp = (1.0 - t) * ext_l + t * ext_r
         linear = (1.0 - t) * ssa_l + t * ssa_r
         weighted = ((1.0 - t) * ext_l * ssa_l + t * ext_r * ssa_r) / np.where(
@@ -694,7 +695,7 @@ class ParticleProperties:
         scat_arr = self.scat.m
         scat_l = scat_arr[idx_l]
         scat_r = scat_arr[idx_r]
-        t = self._broadcast_t(t, scat_l)
+        t = _broadcast_t(t, scat_l)
         scat_denom = (1.0 - t) * scat_l + t * scat_r
 
         safe_denom = np.where(scat_denom == 0.0, 1.0, scat_denom)
