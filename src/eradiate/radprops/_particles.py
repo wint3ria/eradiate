@@ -394,7 +394,10 @@ class ParticleProperties:
             layout during interpolation, cached to minimize overhead.
         """
         if self._phase is None:
-            self._phase = self.data["phase"].transpose("phamat", "iangle", "w", ...)
+            if self.has_size_distribution:
+                self._phase = self.data["phase"].transpose("phamat", "iangle", "w", "reff", "veff")
+            else:
+                self._phase = self.data["phase"].transpose("phamat", "iangle", "w")
         return self._phase
 
     @property
@@ -408,8 +411,10 @@ class ParticleProperties:
         if self._pmom is None:
             if "pmom" not in self.data:
                 return None
+            elif self.has_size_distribution:
+                self._pmom = self.data["pmom"].transpose("imom", "w", "reff", "veff")
             else:
-                self._pmom = self.data["pmom"].transpose("imom", "w", ...)
+                self._pmom = self.data["pmom"].transpose("imom", "w")
 
         return self._pmom
 
