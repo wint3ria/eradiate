@@ -865,7 +865,7 @@ class ParticleProperties:
         if self.has_size_distribution:
             raise ValueError(
                 "eval_phase() cannot be called on a dataset with 'reff'/'veff' "
-                "dimensions; use eval_phase_grid() instead"
+                "dimensions; use eval_phase_union() instead"
             )
 
         is_scalar = np.isscalar(w.m)
@@ -905,96 +905,6 @@ class ParticleProperties:
         if is_scalar:
             return mu[0], phase[:, 0, :]
         return mu, phase
-
-    def eval_phase_grid(
-        self, w: pint.Quantity
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Evaluate the phase function at a single wavelength for every native
-        ``(reff, veff)`` grid point.
-
-        This is the grid-native counterpart of :meth:`eval_phase`: it calls
-        :meth:`eval_phase_union` for the raw per-point union grids, then
-        decimates or upsamples each point to its own target angle count.
-
-        Parameters
-        ----------
-        w : quantity
-            Query wavelength (scalar).
-
-        Returns
-        -------
-        mu : ndarray
-            Scattering angle cosines, shape ``(n_reff, n_veff, n_mu_max)``.
-            Points beyond a given grid point's own angle count are NaN-padded,
-            since different grid points may have a different native angular
-            resolution.
-
-        phase : ndarray
-            Phase function values in sr⁻¹, shape
-            ``(n_phamat, n_reff, n_veff, n_mu_max)``, NaN-padded like ``mu``.
-
-        nangles : ndarray
-            Valid angle count for each grid point, shape ``(n_reff, n_veff)``.
-        """
-        if not self.has_size_distribution:
-            raise ValueError(
-                "eval_phase_grid() requires a dataset with 'reff'/'veff' "
-                "dimensions; use eval_phase() instead"
-            )
-
-        w_arr = np.atleast_1d(w)
-        if w_arr.size != 1:
-            raise ValueError("eval_phase_grid() only accepts a scalar wavelength")
-
-        mu_pad, phase_pad = self.eval_phase_union(w_arr)
-
-        n_reff = self.data.sizes["reff"]
-        n_veff = self.data.sizes["veff"]
-        n_phamat = self.data.sizes["phamat"]
-        n_iangle = self.data.sizes["iangle"]
-
-        mu_list: list[np.ndarray] = []
-        phase_list: list[np.ndarray] = []
-
-        for idx in range(n_reff * n_veff):
-            ireff, iveff = divmod(idx, n_veff)
-
-            n = int((~np.isnan(mu_pad[idx])).sum())
-            mu_union = mu_pad[idx, :n]
-            phase_union = phase_pad[idx, :, :n]
-
-            n_mu_pt = (
-                n_iangle if self._has_fixed_mu_grid_at(ireff, iveff) else 2 * n_iangle
-            )
-            n_union = n
-
-            if n_union > n_mu_pt:
-                keep = _rdp1d_log(mu_union, phase_union, n_mu_pt)
-                mu_pt = mu_union[keep]
-                phase_pt = phase_union[:, keep]
-            elif n_union < n_mu_pt:
-                mu_pt = _upsample_mu(mu_union, n_mu_pt)
-                phase_pt = interp1d(mu_union, phase_union, mu_pt, bounds="clamp")
-            else:
-                mu_pt = mu_union
-                phase_pt = phase_union
-
-            mu_list.append(mu_pt)
-            phase_list.append(phase_pt)
-
-        nangles = np.array([len(m) for m in mu_list]).reshape(n_reff, n_veff)
-        n_mu_max = int(nangles.max())
-
-        mu = np.full((n_reff, n_veff, n_mu_max), np.nan)
-        phase = np.full((n_phamat, n_reff, n_veff, n_mu_max), np.nan)
-        for idx, (mu_pt, phase_pt) in enumerate(zip(mu_list, phase_list)):
-            ireff, iveff = divmod(idx, n_veff)
-            n = len(mu_pt)
-            mu[ireff, iveff, :n] = mu_pt
-            phase[:, ireff, iveff, :n] = phase_pt
-
-        return mu, phase, nangles
 
     def phase_dataset_for_reff_veff(
         self,
@@ -1039,10 +949,12 @@ class ParticleProperties:
         if ext is None:
             ext = ext_grid[0, i_reff, i_veff]
 
-        mu_grid, phase_grid, nangles_grid = self.eval_phase_grid(wavelength[0])
-        n = int(nangles_grid[i_reff, i_veff])
-        mu = mu_grid[i_reff, i_veff, :n]
-        phase_vals = phase_grid[:, i_reff, i_veff, :n]  # (nphamat, n_mu)
+        n_veff = self.data.sizes["veff"]
+        idx = i_reff * n_veff + i_veff
+        mu_pad, phase_pad = self.eval_phase_union(wavelength[0])
+        n = int((~np.isnan(mu_pad[idx])).sum())
+        mu = mu_pad[idx, :n]
+        phase_vals = phase_pad[idx, :, :n]  # (nphamat, n_mu)
         theta = np.rad2deg(np.arccos(mu))
         assert theta[0] > theta[-1], "expected descending theta"
 
