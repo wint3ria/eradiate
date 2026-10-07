@@ -320,7 +320,7 @@ class SpatialGrid(ABC):
         return _repr_diagrams.grid_repr_html(self)
 
 
-@frozen(eq=False, init=False)
+@frozen(eq=False, init=False, repr=False)
 class CartesianGrid(SpatialGrid):
     """
     Plane parallel grid coordinates [``plane_parallel_coords``].
@@ -548,11 +548,11 @@ class CartesianGrid(SpatialGrid):
 
     def __repr__(self) -> str:
         return (
-            f"CartesianGrid(\n"
-            f"  x: [{self.edges_x[0]:~P}, {self.edges_x[-1]:~P}], {self.n_cells_x} cells\n"
-            f"  y: [{self.edges_y[0]:~P}, {self.edges_y[-1]:~P}], {self.n_cells_y} cells\n"
-            f"  z: [{self.levels[0]:~P}, {self.levels[-1]:~P}], {self.n_layers} layers\n"
-            f")"
+            "<CartesianGrid "
+            f"x={self.edges_x[[0, -1]]:~P} ({self.n_cells_x} cells) "
+            f"y={self.edges_y[[0, -1]]:~P} ({self.n_cells_y} cells) "
+            f"z={self.levels[[0, -1]]:~P} ({self.n_layers} layers) "
+            ">"
         )
 
     @staticmethod
@@ -968,7 +968,7 @@ class CartesianGrid(SpatialGrid):
         return self.centers_y
 
 
-@frozen(eq=False, init=False)
+@frozen(eq=False, init=False, frozen=False)
 class SphericalGrid(SpatialGrid):
     """
     Spherical shell grid coordinates [``spherical_shell_coords``].
@@ -1126,11 +1126,11 @@ class SphericalGrid(SpatialGrid):
 
     def __repr__(self) -> str:
         return (
-            f"SphericalGrid(\n"
-            f"  azimuth:    [{self.azimuths[0]:~P}, {self.azimuths[-1]:~P}], {self.n_cells_x} sectors\n"
-            f"  colatitude: [{self.colatitudes[0]:~P}, {self.colatitudes[-1]:~P}], {self.n_cells_y} bands\n"
-            f"  z:          [{self.levels[0]:~P}, {self.levels[-1]:~P}], {self.n_layers} layers\n"
-            f")"
+            "<SphericalGrid "
+            f"azimuth={self.azimuths[[0, -1]]:~P} ({self.n_cells_x} sectors) "
+            f"colatitude={self.colatitudes[[0, -1]]:~P} ({self.n_cells_y} bands) "
+            f"z={self.levels[[0, -1]]:~P} ({self.n_layers} layers) "
+            ">"
         )
 
     @property
