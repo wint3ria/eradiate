@@ -307,7 +307,7 @@ class SpatialGrid(ABC):
         return (self.n_cells_x, self.n_cells_y, self.n_cells_z)
 
     @property
-    def onedim(self) -> bool:
+    def is_1d(self) -> bool:
         """Is this grid suitable for expressing properties of a 1D atmosphere."""
         return self.n_cells_x == 1 and self.n_cells_y == 1
 

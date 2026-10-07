@@ -733,7 +733,7 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
         elif isinstance(self.geometry, PlaneParallelGeometry):
             medium = (
                 "eoheterogeneous"
-                if self.force_majorant or not self.geometry.grid.onedim
+                if self.force_majorant or not self.geometry.grid.is_1d
                 else "piecewise"
             )
             if medium == "eoheterogeneous" and self.extremum_resolution != (1, 1, 1):
