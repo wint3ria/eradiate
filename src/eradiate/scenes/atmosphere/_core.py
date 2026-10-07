@@ -711,13 +711,11 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
                 self.geometry,
                 self.eval_albedo,
                 units=ureg.dimensionless,
-                dtype=np.float64,
             ),
             "sigma_t": generate_gridvolume(
                 self.geometry,
                 self.eval_sigma_t,
                 units=uck.get("collision_coefficient"),
-                dtype=np.float64,
             ),
         }
         sigma_t_id = f"{self.id}_sigma_t"
@@ -800,7 +798,6 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
             units=ureg.dimensionless,
             search=albedo_search,
             flag=KernelSceneParameterFlags.SPECTRAL,
-            dtype=np.float64,
         )
         sigma_t_grid = generate_gridvolume(
             self.geometry,
@@ -808,7 +805,6 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
             units=uck.get("collision_coefficient"),
             search=sigma_t_search,
             flag=KernelSceneParameterFlags.SPECTRAL,
-            dtype=np.float64,
         )
 
         return {

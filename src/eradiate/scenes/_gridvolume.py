@@ -174,7 +174,7 @@ def generate_gridvolume(
     wrap_mode: str | None = None,
     spectral_index: bool = True,
     units=None,
-    dtype: type = np.float32,
+    dtype: type = None,
     extra_kwargs: dict | None = None,
 ) -> dict | SceneParameter:
     """
@@ -223,7 +223,7 @@ def generate_gridvolume(
     units : pint.Unit, optional
     If set, convert grid values to these units before processing.
 
-    dtype : numpy.dtype, optional, default: numpy.float32
+    dtype : numpy.dtype, optional, default: None
         NumPy dtype of the resulting grid buffer.
 
     extra_kwargs : dict, optional
