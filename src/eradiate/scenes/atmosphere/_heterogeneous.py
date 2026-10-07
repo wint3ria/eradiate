@@ -119,7 +119,7 @@ class HeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
         """
         Returns
         -------
-        list
+        list of .AbstractHeterogeneousAtmosphere
             The list of all registered atmospheric components.
         """
         result = [self.molecular_atmosphere] if self.molecular_atmosphere else []
