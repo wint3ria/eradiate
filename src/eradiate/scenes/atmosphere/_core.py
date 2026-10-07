@@ -478,7 +478,7 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
 
         data_vars = {
             "sigma_t": (
-                ("x_cells", "y_cells", "z_layer"),
+                ("x_cell", "y_cell", "z_layer"),
                 sigma_t.m_as(sigma_units),
                 {
                     "units": f"{symbol(sigma_units)}",
@@ -487,7 +487,7 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
                 },
             ),
             "albedo": (
-                ("x_cells", "y_cells", "z_layer"),
+                ("x_cell", "y_cell", "z_layer"),
                 albedo,
                 {
                     "standard_name": "albedo",
@@ -501,7 +501,7 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
             data_vars.update(
                 {
                     "sigma_a": (
-                        ("x_cells", "y_cells", "z_layer"),
+                        ("x_cell", "y_cell", "z_layer"),
                         sigma_t.m_as(sigma_units) * (1.0 - albedo),
                         {
                             "units": f"{symbol(sigma_units)}",
@@ -510,7 +510,7 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
                         },
                     ),
                     "sigma_s": (
-                        ("x_cells", "y_cells", "z_layer"),
+                        ("x_cell", "y_cell", "z_layer"),
                         sigma_t.m_as(sigma_units) * albedo,
                         {
                             "units": f"{symbol(sigma_units)}",
