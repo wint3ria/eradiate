@@ -163,27 +163,31 @@ class SpatialGrid(ABC):
     @classmethod
     def convert(cls, value: t.Any) -> t.Any:
         """
-        Convert dictionary type of parameters to a SpatialGrid.
-
-        Returns the default plane parallel ``SpatialGrid`` if value
-        is ``"plane_parallel_coords"``. If value is a ``pint.Quantity``,
-        attempts to construct a 1D atmosphere with the layer altitudes
-        contained in the quantity. If value is a ``np.ndarray``, interpret it
-        as an array of layer altitudes in meters.
-
-        If value is a dict, expects a ``"type"`` key with the value
-        ``"plane_parallel_coords"`` or ``"spherical_shell_geometry"``.
-        Other keys are passed to the relevant subclass constructor.
+        Attempt conversion of a value to a SpatialGrid.
 
         Parameters
         ----------
         value
-            ``str``, ``dict`` or ``pint.Quantity`` the parameter specification
+            The value for which conversion is attempted.
 
         Returns
         -------
-        SpatialGrid
-            Constructed grid
+        CartesianGrid or SphericalGrid
+
+        Notes
+        -----
+        Conversion rules are as follows:
+
+        * If ``value`` is ``"plane_parallel_grid_coords"``, return a default
+          plane parallel ``CartesianGrid``.
+        * If value is a ``pint.Quantity``, attempt to construct a 1D 
+          ``CartesianGrid`` with the layer altitudes contained in the quantity.
+        * If value is a ``np.ndarray``, interpret it as an array of layer
+          altitudes in meters and construct a 1D ``CartesianGrid`` using it.
+        * If value is a dict, expects a ``"type"`` key with the value
+          ``"plane_parallel_coords"`` or ``"spherical_shell_geometry"``.
+          Other keys are passed to the relevant subclass constructor.
+        * Otherwise, do not convert.
         """
         if isinstance(value, str):
             if value == "plane_parallel_coords":
