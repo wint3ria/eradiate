@@ -29,7 +29,7 @@ from ...spectral.index import (
 from ...units import unit_context_config as ucc
 from ...units import unit_registry as ureg
 from ...util.misc import cache_by_id
-from ...validators import is_positive
+from ...validators import is_positive, all_positive
 
 
 def _particle_ensemble_distribution_converter(value):
@@ -72,7 +72,7 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
     bottom: pint.Quantity = documented(
         pinttrs.field(
             default=ureg.Quantity(0.0, ureg.km),
-            validator=[is_positive, pinttrs.validators.has_compatible_units],
+            validator=[all_positive, pinttrs.validators.has_compatible_units],
             units=ucc.deferred("length"),
         ),
         doc="Bottom altitude of the particle ensemble. May be a scalar (the "
@@ -90,7 +90,7 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
         pinttrs.field(
             units=ucc.deferred("length"),
             default=ureg.Quantity(1.0, ureg.km),
-            validator=[is_positive, pinttrs.validators.has_compatible_units],
+            validator=[all_positive, pinttrs.validators.has_compatible_units],
         ),
         doc="Top altitude of the particle ensemble. May be a scalar (the "
         "same altitude everywhere) or an ``(n_x, n_y)`` array matching the "
@@ -163,7 +163,7 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
         pinttrs.field(
             units=ucc.deferred("dimensionless"),
             factory=lambda: ureg.Quantity(0.2, ureg.dimensionless),
-            validator=[is_positive, pinttrs.validators.has_compatible_units],
+            validator=[all_positive, pinttrs.validators.has_compatible_units],
         ),
         doc="Extinction optical thickness at the reference wavelength. May be "
         "a scalar (the same optical thickness everywhere) or an "
@@ -175,14 +175,6 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
         init_type="quantity or float",
         default="0.2",
     )
-
-    @tau_ref.validator
-    def _tau_ref_all_positive(self, attribute, value):
-        if np.any(value < 0.0):
-            raise ValueError(
-                "While initialising ParticleEnsemble: reference "
-                "extinction optical thickness must be positive"
-            )
 
     @tau_ref.validator
     @bottom.validator

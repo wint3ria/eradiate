@@ -127,7 +127,7 @@ class TestParticleEnsemble:
 
     def test_invalid_tau_ref(self, particle_dataset_path):
         """Raises when 'tau_ref' is invalid."""
-        with pytest.raises(ValueError, match="tau_ref must be positive or zero"):
+        with pytest.raises(ValueError, match="tau_ref must be all positive or zero"):
             ParticleEnsemble(
                 particle_properties=particle_dataset_path,
                 bottom=1.2 * ureg.km,
