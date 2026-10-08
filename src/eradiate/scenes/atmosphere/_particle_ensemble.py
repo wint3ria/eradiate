@@ -1,5 +1,5 @@
 """
-Particle ensembles.
+Particle components.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ from ...util.misc import cache_by_id
 from ...validators import is_positive, all_positive
 
 
-def _particle_ensemble_distribution_converter(value):
+def _particle_distribution_converter(value):
     if isinstance(value, str):
         if value == "uniform":
             return particle_distribution_factory.convert({"type": "uniform"})
@@ -45,164 +45,9 @@ def _particle_ensemble_distribution_converter(value):
 
 
 @define(eq=False, slots=False)
-class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
-    """
-    Particle ensemble scene element [``particle_ensemble``].
+class ParticleComponent(AbstractHeterogeneousAtmosphere):
 
-    The particle ensemble has a vertical extension specified by a bottom
-    altitude (set by ``bottom``) and a top altitude (set by ``top``).
-    Inside the ensemble, the particles number is distributed according to a
-    distribution (set by ``distribution``).
-    See :mod:`~eradiate.scenes.atmosphere.particle_dist` for the available
-    distribution types and corresponding parameters.
-    The particle number fraction is evaluated on the vertical layers of the
-    render grid (see ``geometry``) to describe its variations with altitude.
-    The particle density in the ensemble is adjusted so that the particle
-    ensemble's optical thickness at a specified reference wavelength
-    (``w_ref``) meets a specified value (``tau_ref``).
-    The particles radiative properties are specified by a data set
-    (``dataset``).
-
-    Notes
-    -----
-    If the optical property dataset contains only one spectral data point, the
-    data is considered uniform throughout the entire spectrum.
-    """
-
-    bottom: pint.Quantity = documented(
-        pinttrs.field(
-            default=ureg.Quantity(0.0, ureg.km),
-            validator=[all_positive, pinttrs.validators.has_compatible_units],
-            units=ucc.deferred("length"),
-        ),
-        doc="Bottom altitude of the particle ensemble. May be a scalar (the "
-        "same altitude everywhere) or an ``(n_x, n_y)`` array matching the "
-        "scene geometry's horizontal grid shape, for a bottom altitude that "
-        "varies spatially.\n"
-        "\n"
-        "Unit-enabled field (default: ucc[length])",
-        type="quantity",
-        init_type="float or quantity",
-        default="0 km",
-    )
-
-    top: pint.Quantity = documented(
-        pinttrs.field(
-            units=ucc.deferred("length"),
-            default=ureg.Quantity(1.0, ureg.km),
-            validator=[all_positive, pinttrs.validators.has_compatible_units],
-        ),
-        doc="Top altitude of the particle ensemble. May be a scalar (the "
-        "same altitude everywhere) or an ``(n_x, n_y)`` array matching the "
-        "scene geometry's horizontal grid shape, for a top altitude that "
-        "varies spatially.\n"
-        "\n"
-        "Unit-enabled field (default: ucc[length]).",
-        type="quantity",
-        init_type="float or quantity",
-        default="1 km",
-    )
-
-    @bottom.validator
-    @top.validator
-    def _bottom_top_validator(self, attribute, value):
-        if np.any(self.bottom >= self.top):
-            raise ValueError(
-                f"while validating '{attribute.name}': bottom altitude must be "
-                "lower than top altitude "
-                f"(got bottom={self.bottom}, top={self.top})"
-            )
-
-    distribution: ParticleDistribution = documented(
-        attrs.field(
-            default="uniform",
-            converter=_particle_ensemble_distribution_converter,
-            validator=attrs.validators.instance_of(ParticleDistribution),
-        ),
-        doc="Particle distribution in the Z dimension of the coords grid. "
-        "Simple defaults can be set using a string: "
-        '``"uniform"`` (resp. ``"gaussian"``, ``"exponential"``) is converted to '
-        ":class:`UniformParticleDistribution() <.UniformParticleDistribution>` "
-        "(resp. :class:`GaussianParticleDistribution() <.GaussianParticleDistribution>`, "
-        ":class:`ExponentialParticleDistribution() <.ExponentialParticleDistribution>`).",
-        init_type=":class:`.ParticleDistribution` or dict or "
-        '{"uniform", "gaussian", "exponential"}, optional',
-        type=":class:`.ParticleDistribution`",
-        default='"uniform"',
-    )
-
-    w_ref: pint.Quantity = documented(
-        pinttrs.field(
-            units=ucc.deferred("wavelength"),
-            default=550.0 * ureg.nm,
-            validator=[is_positive, pinttrs.validators.has_compatible_units],
-        ),
-        doc="Reference wavelength at which the extinction optical thickness is "
-        "specified. To minimize the uncertainty on the computed extinction "
-        "coefficient, it is recommended that this wavelength is included in the "
-        "provided radiative property dataset.\n"
-        "\n"
-        "Unit-enabled field (default: ucc['wavelength']).",
-        type="quantity",
-        init_type="quantity or float",
-        default="550.0 nm",
-    )
-
-    @w_ref.validator
-    def _w_ref_validator(self, attribute, value):
-        w_units = self.particle_properties.w.u
-        if not np.any(np.isclose(value.m_as(w_units), self.particle_properties.w.m)):
-            warnings.warn(
-                "While initializing ParticleEnsemble: the provided aerosol "
-                "single-scattering property dataset does not contain the selected "
-                f"reference wavelength (w_ref = {value})",
-                stacklevel=2,
-            )
-
-    tau_ref: pint.Quantity = documented(
-        pinttrs.field(
-            units=ucc.deferred("dimensionless"),
-            factory=lambda: ureg.Quantity(0.2, ureg.dimensionless),
-            validator=[all_positive, pinttrs.validators.has_compatible_units],
-        ),
-        doc="Extinction optical thickness at the reference wavelength. May be "
-        "a scalar (the same optical thickness everywhere) or an "
-        "``(n_x, n_y)`` array matching the scene geometry's horizontal grid "
-        "shape, for an optical thickness that varies spatially.\n"
-        "\n"
-        "Unit-enabled field (default: ucc[dimensionless]).",
-        type="quantity",
-        init_type="quantity or float",
-        default="0.2",
-    )
-
-    @tau_ref.validator
-    @bottom.validator
-    @top.validator
-    def _xy_shape_validator(self, attribute, value):
-        if self.geometry is None:
-            return
-        if np.size(value) == 1:
-            return
-        if value.shape != self.geometry.grid.shape[:2]:
-            raise ValueError(
-                "While initialising ParticleEnsemble: the shape of the "
-                f"{attribute.name} attribute is inconsistent with the "
-                "scene geometry. Expected a scalar value or a "
-                f"{self.geometry.grid.shape[:2]} sized array, "
-                f"received a {value.shape} sized array."
-            )
-
-    particle_properties: ParticleProperties = documented(
-        attrs.field(
-            default="govaerts_2021-continental",
-            converter=ParticleProperties.convert,
-        ),
-        doc="Particle single-scattering properties.",
-        type="ParticleProperties",
-        init_type="ParticleProperties or Dataset or path-like or str",
-        default='"govaerts_2021-continental"',
-    )
+    """Abstract base class for particulate media"""
 
     has_absorption: bool = documented(
         attrs.field(default=True, converter=bool),
@@ -239,6 +84,168 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
         default="False",
     )
 
+
+@define(eq=False, slots=False)
+class ParticleAOTComponent(ParticleComponent):
+    """
+    Particle scene element configured by AOT [``particle_aot``].
+
+    The particle medium has a vertical extension specified by a bottom
+    altitude (set by ``bottom``) and a top altitude (set by ``top``).
+    Inside the medium, the particles number is distributed according to a
+    distribution (set by ``distribution``).
+    See :mod:`~eradiate.scenes.atmosphere.particle_dist` for the available
+    distribution types and corresponding parameters.
+    The particle number fraction is evaluated on the vertical layers of the
+    render grid (see ``geometry``) to describe its variations with altitude.
+    The particle density in the medium is adjusted so that the particle
+    particles' optical thickness at a specified reference wavelength
+    (``w_ref``) meets a specified value (``tau_ref``).
+    The particles radiative properties are specified by a data set
+    (``dataset``).
+
+    Notes
+    -----
+    If the optical property dataset contains only one spectral data point, the
+    data is considered uniform throughout the entire spectrum.
+    """
+
+    bottom: pint.Quantity = documented(
+        pinttrs.field(
+            default=ureg.Quantity(0.0, ureg.km),
+            validator=[all_positive, pinttrs.validators.has_compatible_units],
+            units=ucc.deferred("length"),
+        ),
+        doc="Bottom altitude of the particle component. May be a scalar (the "
+        "same altitude everywhere) or an ``(n_x, n_y)`` array matching the "
+        "scene geometry's horizontal grid shape, for a bottom altitude that "
+        "varies spatially.\n"
+        "\n"
+        "Unit-enabled field (default: ucc[length])",
+        type="quantity",
+        init_type="float or quantity",
+        default="0 km",
+    )
+
+    top: pint.Quantity = documented(
+        pinttrs.field(
+            units=ucc.deferred("length"),
+            default=ureg.Quantity(1.0, ureg.km),
+            validator=[all_positive, pinttrs.validators.has_compatible_units],
+        ),
+        doc="Top altitude of the particle component. May be a scalar (the "
+        "same altitude everywhere) or an ``(n_x, n_y)`` array matching the "
+        "scene geometry's horizontal grid shape, for a top altitude that "
+        "varies spatially.\n"
+        "\n"
+        "Unit-enabled field (default: ucc[length]).",
+        type="quantity",
+        init_type="float or quantity",
+        default="1 km",
+    )
+
+    @bottom.validator
+    @top.validator
+    def _bottom_top_validator(self, attribute, value):
+        if np.any(self.bottom >= self.top):
+            raise ValueError(
+                f"while validating '{attribute.name}': bottom altitude must be "
+                "lower than top altitude "
+                f"(got bottom={self.bottom}, top={self.top})"
+            )
+
+    distribution: ParticleDistribution = documented(
+        attrs.field(
+            default="uniform",
+            converter=_particle_distribution_converter,
+            validator=attrs.validators.instance_of(ParticleDistribution),
+        ),
+        doc="Particle distribution in the Z dimension of the coords grid. "
+        "Simple defaults can be set using a string: "
+        '``"uniform"`` (resp. ``"gaussian"``, ``"exponential"``) is converted to '
+        ":class:`UniformParticleDistribution() <.UniformParticleDistribution>` "
+        "(resp. :class:`GaussianParticleDistribution() <.GaussianParticleDistribution>`, "
+        ":class:`ExponentialParticleDistribution() <.ExponentialParticleDistribution>`).",
+        init_type=":class:`.ParticleDistribution` or dict or "
+        '{"uniform", "gaussian", "exponential"}, optional',
+        type=":class:`.ParticleDistribution`",
+        default='"uniform"',
+    )
+
+    w_ref: pint.Quantity = documented(
+        pinttrs.field(
+            units=ucc.deferred("wavelength"),
+            default=550.0 * ureg.nm,
+            validator=[is_positive, pinttrs.validators.has_compatible_units],
+        ),
+        doc="Reference wavelength at which the extinction optical thickness is "
+        "specified. To minimize the uncertainty on the computed extinction "
+        "coefficient, it is recommended that this wavelength is included in the "
+        "provided radiative property dataset.\n"
+        "\n"
+        "Unit-enabled field (default: ucc['wavelength']).",
+        type="quantity",
+        init_type="quantity or float",
+        default="550.0 nm",
+    )
+
+    @w_ref.validator
+    def _w_ref_validator(self, attribute, value):
+        w_units = self.particle_properties.w.u
+        if not np.any(np.isclose(value.m_as(w_units), self.particle_properties.w.m)):
+            warnings.warn(
+                "While initializing ParticleAOTComponent: the provided aerosol "
+                "single-scattering property dataset does not contain the selected "
+                f"reference wavelength (w_ref = {value})",
+                stacklevel=2,
+            )
+
+    tau_ref: pint.Quantity = documented(
+        pinttrs.field(
+            units=ucc.deferred("dimensionless"),
+            factory=lambda: ureg.Quantity(0.2, ureg.dimensionless),
+            validator=[all_positive, pinttrs.validators.has_compatible_units],
+        ),
+        doc="Extinction optical thickness at the reference wavelength. May be "
+        "a scalar (the same optical thickness everywhere) or an "
+        "``(n_x, n_y)`` array matching the scene geometry's horizontal grid "
+        "shape, for an optical thickness that varies spatially.\n"
+        "\n"
+        "Unit-enabled field (default: ucc[dimensionless]).",
+        type="quantity",
+        init_type="quantity or float",
+        default="0.2",
+    )
+
+    @tau_ref.validator
+    @bottom.validator
+    @top.validator
+    def _xy_shape_validator(self, attribute, value):
+        if self.geometry is None:
+            return
+        if np.size(value) == 1:
+            return
+        if value.shape != self.geometry.grid.shape[:2]:
+            raise ValueError(
+                "While initialising ParticleAOTComponent: the shape of the "
+                f"{attribute.name} attribute is inconsistent with the "
+                "scene geometry. Expected a scalar value or a "
+                f"{self.geometry.grid.shape[:2]} sized array, "
+                f"received a {value.shape} sized array."
+            )
+
+    particle_properties: ParticleProperties = documented(
+        attrs.field(
+            default="govaerts_2021-continental",
+            converter=ParticleProperties.convert,
+        ),
+        doc="Particle single-scattering properties.",
+        type="ParticleProperties",
+        init_type="ParticleProperties or Dataset or path-like or str",
+        default='"govaerts_2021-continental"',
+    )
+
+
     _phase: ParticlePhaseFunction | None = attrs.field(default=None, init=False)
 
     def __init__(self, *args, dataset=None, **kwargs):
@@ -264,7 +271,7 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
 
     def eval_fractions(self, grid: SpatialGrid) -> np.ndarray:
         """
-        Compute the particle number fraction in the particle ensemble in 3D
+        Compute the particle number fraction in the component in 3D
         according to the distribution.
 
         The Z dimension (vertical extent) supports spatially varying
