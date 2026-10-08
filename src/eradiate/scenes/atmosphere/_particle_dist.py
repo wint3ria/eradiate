@@ -138,7 +138,7 @@ class ExponentialParticleDistribution(ParticleDistribution):
                 f"while validating {attribute.name}: rate must be strictly positive"
             )
 
-    def __init__(self, rate: Optional[float] = None, scale: Optional[float] = None):
+    def __init__(self, rate: float | None = None, scale: float | None = None):
         if rate is None and scale is None:
             self.__attrs_init__()
         elif scale is None and rate is not None:
