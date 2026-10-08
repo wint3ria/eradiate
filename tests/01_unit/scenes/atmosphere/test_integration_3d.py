@@ -8,7 +8,7 @@ from eradiate.grid import CartesianGrid
 from eradiate.scenes.atmosphere import (
     HeterogeneousAtmosphere,
     MolecularAtmosphere,
-    ParticleEnsemble,
+    ParticleAOTComponent,
 )
 from eradiate.scenes.geometry import PlaneParallelGeometry
 from eradiate.spectral.index import SpectralIndex
@@ -58,7 +58,7 @@ def test_gridded_empty(modes_all_double):
         lambda: {"molecular_atmosphere": MolecularAtmosphere()},
         lambda: {
             "molecular_atmosphere": None,
-            "particle_ensembles": ParticleEnsemble(),
+            "particle_components": ParticleAOTComponent(),
         },
     ],
     ids=["molecular", "particle"],

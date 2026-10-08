@@ -9,7 +9,7 @@ from eradiate.grid import SpatialGrid, CartesianGrid, SphericalGrid
 from eradiate.radprops import ParticleProperties
 from eradiate.scenes.atmosphere import (
     ArrayParticleDistribution,
-    ParticleEnsemble,
+    ParticleAOTComponent,
     UniformParticleDistribution,
 )
 from eradiate.scenes.core import traverse
@@ -69,7 +69,7 @@ class TestParticleEnsemble:
     def test_basic(self, mode_mono, geometry):
         """Basic constructor pattern"""
         # Construct from path
-        layer = ParticleEnsemble(
+        layer = ParticleAOTComponent(
             particle_properties="tests/aerosol/govaerts_2021-desert-aer_core_v2.nc",
             geometry=geometry,
         )
@@ -81,7 +81,7 @@ class TestParticleEnsemble:
         """Construction succeeds with basic parameters"""
 
         assert (
-            ParticleEnsemble()
+            ParticleAOTComponent()
         )  # should pick up the default dataset from shipped assets
 
     def test_construct_attrs(self, particle_properties_test):
@@ -89,7 +89,7 @@ class TestParticleEnsemble:
         bottom = 1.2 * ureg.km
         top = 1.8 * ureg.km
         tau_ref = 0.3 * ureg.dimensionless
-        layer = ParticleEnsemble(
+        layer = ParticleAOTComponent(
             geometry={
                 "type": "plane_parallel",
                 "ground_altitude": bottom,
@@ -108,7 +108,7 @@ class TestParticleEnsemble:
 
     def test_altitude_units(self, particle_dataset_path):
         """Accept different units for bottom and top altitudes."""
-        assert ParticleEnsemble(
+        assert ParticleAOTComponent(
             particle_properties=particle_dataset_path,
             bottom=1.0 * ureg.km,
             top=2000.0 * ureg.m,
@@ -119,7 +119,7 @@ class TestParticleEnsemble:
         with pytest.raises(
             ValueError, match="bottom altitude must be lower than top altitude"
         ):
-            ParticleEnsemble(
+            ParticleAOTComponent(
                 particle_properties=particle_dataset_path,
                 top=1.2 * ureg.km,
                 bottom=1.8 * ureg.km,
@@ -128,7 +128,7 @@ class TestParticleEnsemble:
     def test_invalid_tau_ref(self, particle_dataset_path):
         """Raises when 'tau_ref' is invalid."""
         with pytest.raises(ValueError, match="tau_ref must be all positive or zero"):
-            ParticleEnsemble(
+            ParticleAOTComponent(
                 particle_properties=particle_dataset_path,
                 bottom=1.2 * ureg.km,
                 top=1.8 * ureg.km,
@@ -144,7 +144,7 @@ class TestParticleEnsemble:
         """
         bottom = 0.0 * ureg.km
         top = 1.0 * ureg.km
-        layer = ParticleEnsemble(
+        layer = ParticleAOTComponent(
             geometry={
                 "type": "plane_parallel",
                 "ground_altitude": bottom,
@@ -174,7 +174,7 @@ class TestParticleEnsemble:
         """
         bottom = 0.0 * ureg.km
         top = 1.0 * ureg.km
-        layer = ParticleEnsemble(
+        layer = ParticleAOTComponent(
             geometry={
                 "type": "plane_parallel",
                 "ground_altitude": bottom,
@@ -204,7 +204,7 @@ class TestParticleEnsemble:
         """
         bottom = 0.0 * ureg.km
         top = 1.0 * ureg.km
-        layer = ParticleEnsemble(
+        layer = ParticleAOTComponent(
             geometry={
                 "type": "plane_parallel",
                 "ground_altitude": bottom,
@@ -228,17 +228,17 @@ class TestParticleEnsemble:
 
     def test_kernel_scale(self, modes_all_single, particle_properties_test):
         """Scale parameter propagates to kernel dict and latter can be loaded."""
-        particle_ensemble = ParticleEnsemble(
+        particles = ParticleAOTComponent(
             id="atmosphere", particle_properties=particle_properties_test, scale=2.0
         )
-        template, _ = traverse(particle_ensemble)
+        template, _ = traverse(particles)
         assert template["medium_atmosphere.scale"] == 2.0
 
     def test_eval_radprops_format(self, modes_all_single, particle_dataset_path):
         """
         Method 'eval_radprops' returns dataset with expected datavars and coords.
         """
-        layer = ParticleEnsemble(particle_properties=particle_dataset_path)
+        layer = ParticleAOTComponent(particle_properties=particle_dataset_path)
         si = SpectralIndex.new()
         ds = layer.eval_radprops(si)
         expected_data_vars = ["sigma_t", "albedo"]
@@ -251,7 +251,7 @@ class TestParticleEnsemble:
         "tau_ref", list(np.array([0.6, 1.0, 2.5]) * ureg.dimensionless)
     )
     def test_eval_radprops(self, mode_mono, particle_dataset_path, tau_ref):
-        layer = ParticleEnsemble(
+        layer = ParticleAOTComponent(
             particle_properties=particle_dataset_path,
             bottom=0.5 * ureg.km,  # arbitrary
             top=3.0 * ureg.km,  # arbitrary
@@ -289,7 +289,7 @@ class TestParticleEnsemble:
         Check correct handling of spectral dependency of extinction.
 
         If σ_t(λ) denotes the extinction coefficient at the wavelength λ, then the
-        optical thickness of a uniform particle ensemble is τ(λ) = σ_t(λ) Δz, where Δz
+        optical thickness of a uniform ParticleAOTComponent is τ(λ) = σ_t(λ) Δz, where Δz
         is the layer's thickness. From that follows:
         τ(λ) / τ(λ_ref) = σ_t(λ) / σ_t(λ_ref).
 
@@ -309,7 +309,7 @@ class TestParticleEnsemble:
             np.linspace(0, 5, n_layers + 1) * ureg.km
         )
 
-        layer = ParticleEnsemble(
+        layer = ParticleAOTComponent(
             particle_properties=ds,
             geometry={
                 "type": "plane_parallel",
@@ -368,7 +368,7 @@ class TestParticleEnsemble:
     )
     def test_eval_fractions_shape_and_normalization(self, distribution, bottom, top):
         grid = _make_3d_grid()
-        layer = ParticleEnsemble(
+        layer = ParticleAOTComponent(
             geometry={
                 "type": "plane_parallel",
                 "toa_altitude": grid.levels[-1],
@@ -404,7 +404,7 @@ class TestParticleEnsemble:
         bottom = np.full((2, 2), grid.levels[0].m) * grid.levels.units
         top = np.full((2, 2), grid.levels[-1].m) * grid.levels.units
 
-        ensemble = ParticleEnsemble(
+        particles = ParticleAOTComponent(
             geometry={
                 "type": "plane_parallel",
                 "toa_altitude": grid.levels[-1],
@@ -415,7 +415,7 @@ class TestParticleEnsemble:
             distribution=ArrayParticleDistribution(values=values, method="nearest"),
         )
 
-        fractions = ensemble.eval_fractions(grid)
+        fractions = particles.eval_fractions(grid)
         assert fractions.shape == (2, 2, n_z)
         assert np.allclose(fractions.sum(axis=-1), 1.0)
         assert not np.allclose(fractions[0, 0], fractions[0, 1])
@@ -423,7 +423,7 @@ class TestParticleEnsemble:
 
     def test_eval_fractions_uniform_is_flat(self):
         grid = _make_3d_grid()
-        layer = ParticleEnsemble(
+        layer = ParticleAOTComponent(
             bottom=1.0 * ureg.km, top=4.0 * ureg.km, distribution="uniform"
         )
 
@@ -456,7 +456,7 @@ class TestParticleEnsemble:
         grid = _make_3d_grid()
         w_ref = 550 * ureg.nm
 
-        layer = ParticleEnsemble(
+        layer = ParticleAOTComponent(
             geometry={
                 "type": "plane_parallel",
                 "toa_altitude": grid.levels[-1],
@@ -539,7 +539,7 @@ class TestParticleEnsemble:
         try:
             bottom = 0.0 * ureg.km
             top = 1.0 * ureg.km
-            particle_ensemble = ParticleEnsemble(
+            particles = ParticleAOTComponent(
                 particle_properties=particle_dataset_path,
                 geometry={
                     "type": "plane_parallel",
@@ -550,13 +550,13 @@ class TestParticleEnsemble:
                 has_absorption=has_absorption,
                 has_scattering=has_scattering,
             )
-            grid = particle_ensemble.geometry.grid
+            grid = particles.geometry.grid
             si = SpectralIndex.new(w=550.0 * ureg.nm)
 
             for field in ["albedo", "sigma_t", "sigma_a", "sigma_s"]:
                 expected_value = expected[field]
                 method = f"eval_{field}_mono"
-                result = getattr(particle_ensemble, method)(si, grid)
+                result = getattr(particles, method)(si, grid)
 
                 if isinstance(expected_value, pint.Quantity):
                     np.testing.assert_allclose(
@@ -577,7 +577,7 @@ class TestParticleEnsemble:
                     )
 
                 elif expected_value == "sigma_t":
-                    expected_value = particle_ensemble.eval_sigma_t_mono(si, grid)
+                    expected_value = particles.eval_sigma_t_mono(si, grid)
                     np.testing.assert_allclose(
                         result.m_as(expected_value.units),
                         expected_value.m,
@@ -598,7 +598,7 @@ class TestParticleEnsemble:
         particle_properties = particle_properties_test
         w1, w2 = particle_properties.w[[1, 2]]
 
-        assert ParticleEnsemble(
+        assert ParticleAOTComponent(
             particle_properties=particle_properties, tau_ref=1.0, w_ref=w1
         )
 
@@ -606,7 +606,7 @@ class TestParticleEnsemble:
             UserWarning,
             match="dataset does not contain the selected reference wavelength",
         ):
-            ParticleEnsemble(
+            ParticleAOTComponent(
                 particle_properties=particle_properties,
                 tau_ref=1.0,
                 w_ref=0.5 * (w1 + w2),
