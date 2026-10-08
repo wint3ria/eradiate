@@ -304,7 +304,6 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
     #                       Radiative properties
     # --------------------------------------------------------------------------
 
-    @cache_by_id
     def _eval_albedo_impl(self, w: pint.Quantity, grid: SpatialGrid) -> pint.Quantity:
         # Return albedo from dataset (without accounting for bypass switches)
         # This routine returns an array of shape (n_wavelengths, x, y, n_layers)
@@ -317,7 +316,6 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
         albedo = np.multiply.outer(interpolated.m, where_present) * interpolated.units
         return albedo
 
-    @cache_by_id
     def _eval_sigma_t_impl(self, w: pint.Quantity, grid: SpatialGrid) -> pint.Quantity:
         # Return extinction coefficient from dataset (without accounting
         # for bypass switches). Returns an array of shape (n_wavelengths, x, y, n_layers)
@@ -374,19 +372,20 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
     @eval_albedo.register(MonoSpectralIndex)
     def _(self, si, grid: SpatialGrid | None = None) -> pint.Quantity:
         return self.eval_albedo_mono(
-            w=si.w,
-            grid=self.geometry.grid if grid is None else grid,
+            si, self.geometry.grid if grid is None else grid
         )
 
     @eval_albedo.register(CKDSpectralIndex)
     def _(self, si, grid: SpatialGrid | None = None) -> pint.Quantity:
         return self.eval_albedo_ckd(
-            w=si.w,
-            g=si.g,
+            si=si,
             grid=self.geometry.grid if grid is None else grid,
         )
 
-    def eval_albedo_mono(self, w: pint.Quantity, grid: SpatialGrid) -> pint.Quantity:
+    @cache_by_id
+    def eval_albedo_mono(self, si: SpectralIndex, grid: SpatialGrid) -> pint.Quantity:
+        w = si.w
+
         if self.has_absorption and self.has_scattering:
             albedo = self._eval_albedo_impl(w, grid).squeeze(axis=0)
 
@@ -399,10 +398,8 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
         # Albedo is constant vs spatial dimension
         return np.full_like(grid.layers, albedo)
 
-    def eval_albedo_ckd(
-        self, w: pint.Quantity, g: float, grid: SpatialGrid
-    ) -> pint.Quantity:
-        return self.eval_albedo_mono(w=w, grid=grid)
+    def eval_albedo_ckd(self, si: SpectralIndex, grid: SpatialGrid) -> pint.Quantity:
+        return self.eval_albedo_mono(si, grid)
 
     @singledispatchmethod
     def eval_sigma_t(
@@ -414,19 +411,19 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
     @eval_sigma_t.register(MonoSpectralIndex)
     def _(self, si, grid: SpatialGrid | None = None) -> pint.Quantity:
         return self.eval_sigma_t_mono(
-            w=si.w,
-            grid=self.geometry.grid if grid is None else grid,
+            si, self.geometry.grid if grid is None else grid
         )
 
     @eval_sigma_t.register(CKDSpectralIndex)
     def _(self, si, grid: SpatialGrid | None = None) -> pint.Quantity:
         return self.eval_sigma_t_ckd(
-            w=si.w,
-            g=si.g,
+            si=si,
             grid=self.geometry.grid if grid is None else grid,
         )
 
-    def eval_sigma_t_mono(self, w: pint.Quantity, grid: SpatialGrid) -> pint.Quantity:
+    @cache_by_id
+    def eval_sigma_t_mono(self, si: SpectralIndex, grid: SpatialGrid) -> pint.Quantity:
+        w = si.w
         result = self._eval_sigma_t_impl(w, grid).squeeze(axis=0)
 
         if self.has_absorption and self.has_scattering:
@@ -438,10 +435,8 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
         elif self.has_absorption and not self.has_scattering:
             return result - self._eval_sigma_s_impl(w, grid).squeeze(axis=0)
 
-    def eval_sigma_t_ckd(
-        self, w: pint.Quantity, g: float, grid: SpatialGrid
-    ) -> pint.Quantity:
-        return self.eval_sigma_t_mono(w=w, grid=grid)
+    def eval_sigma_t_ckd(self, si: SpectralIndex, grid: SpatialGrid) -> pint.Quantity:
+        return self.eval_sigma_t_mono(si, grid)
 
     @singledispatchmethod
     def eval_sigma_a(
@@ -453,26 +448,23 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
     @eval_sigma_a.register(MonoSpectralIndex)
     def _(self, si, grid: SpatialGrid | None = None) -> pint.Quantity:
         return self.eval_sigma_a_mono(
-            w=si.w,
-            grid=self.geometry.grid if grid is None else grid,
+            si, self.geometry.grid if grid is None else grid
         )
 
     @eval_sigma_a.register(CKDSpectralIndex)
     def _(self, si, grid: SpatialGrid | None = None) -> pint.Quantity:
         return self.eval_sigma_a_ckd(
-            w=si.w,
-            g=si.g,
+            si=si,
             grid=self.geometry.grid if grid is None else grid,
         )
 
-    def eval_sigma_a_mono(self, w: pint.Quantity, grid: SpatialGrid) -> pint.Quantity:
-        value = self._eval_sigma_a_impl(w, grid).squeeze(axis=0)
+    @cache_by_id
+    def eval_sigma_a_mono(self, si: SpectralIndex, grid: SpatialGrid) -> pint.Quantity:
+        value = self._eval_sigma_a_impl(si.w, grid).squeeze(axis=0)
         return value if self.has_absorption else np.zeros_like(value) * value.units
 
-    def eval_sigma_a_ckd(
-        self, w: pint.Quantity, g: float, grid: SpatialGrid
-    ) -> pint.Quantity:
-        return self.eval_sigma_a_mono(w, grid)
+    def eval_sigma_a_ckd(self, si: SpectralIndex, grid: SpatialGrid) -> pint.Quantity:
+        return self.eval_sigma_a_mono(si, grid)
 
     @singledispatchmethod
     def eval_sigma_s(
@@ -484,26 +476,23 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
     @eval_sigma_s.register(MonoSpectralIndex)
     def _(self, si, grid: SpatialGrid | None = None) -> pint.Quantity:
         return self.eval_sigma_s_mono(
-            w=si.w,
-            grid=self.geometry.grid if grid is None else grid,
+            si, self.geometry.grid if grid is None else grid
         )
 
     @eval_sigma_s.register(CKDSpectralIndex)
     def _(self, si, grid: SpatialGrid | None = None) -> pint.Quantity:
         return self.eval_sigma_s_ckd(
-            w=si.w,
-            g=si.g,
+            si=si,
             grid=self.geometry.grid if grid is None else grid,
         )
 
-    def eval_sigma_s_mono(self, w: pint.Quantity, grid: SpatialGrid) -> pint.Quantity:
-        value = self._eval_sigma_s_impl(w, grid).squeeze(axis=0)
+    @cache_by_id
+    def eval_sigma_s_mono(self, si: SpectralIndex, grid: SpatialGrid) -> pint.Quantity:
+        value = self._eval_sigma_s_impl(si.w, grid).squeeze(axis=0)
         return value if self.has_scattering else np.zeros_like(value) * value.units
 
-    def eval_sigma_s_ckd(
-        self, w: pint.Quantity, g: float, grid: SpatialGrid
-    ) -> pint.Quantity:
-        return self.eval_sigma_s_mono(w, grid)
+    def eval_sigma_s_ckd(self, si: SpectralIndex, grid: SpatialGrid) -> pint.Quantity:
+        return self.eval_sigma_s_mono(si, grid)
 
     # --------------------------------------------------------------------------
     #                       Kernel dictionary generation

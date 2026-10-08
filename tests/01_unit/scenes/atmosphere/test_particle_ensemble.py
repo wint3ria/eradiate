@@ -327,9 +327,12 @@ class TestParticleEnsemble:
         # evaluation routine
         sigma_t = layer._eval_sigma_t_impl(wavelengths, layer.geometry.grid)
         assert sigma_t.units.is_compatible_with(ureg("m**-1"))
-        assert sigma_t.shape == (n_wavelengths, n_layers)
+        assert sigma_t.shape == (n_wavelengths, 1, 1, n_layers)
         # -- Integrate sigma_t * dz vs space coordinate using rectangle method
-        tau = np.sum(sigma_t * layer.geometry.grid.layer_height, axis=1)
+        # (bottom/top are scalar here, so the x, y axes are trivial)
+        tau = np.sum(sigma_t * layer.geometry.grid.layer_height, axis=-1).squeeze(
+            axis=(1, 2)
+        )
 
         # Manually compute extinction at running and reference wavelengths
         w_units = ureg(ds["w"].attrs["units"])
@@ -544,12 +547,12 @@ class TestParticleEnsemble:
                 has_scattering=has_scattering,
             )
             grid = particle_ensemble.geometry.grid
-            w = 550.0 * ureg.nm
+            si = SpectralIndex.new(w=550.0 * ureg.nm)
 
             for field in ["albedo", "sigma_t", "sigma_a", "sigma_s"]:
                 expected_value = expected[field]
                 method = f"eval_{field}_mono"
-                result = getattr(particle_ensemble, method)(w, grid)
+                result = getattr(particle_ensemble, method)(si, grid)
 
                 if isinstance(expected_value, pint.Quantity):
                     np.testing.assert_allclose(
@@ -570,7 +573,7 @@ class TestParticleEnsemble:
                     )
 
                 elif expected_value == "sigma_t":
-                    expected_value = particle_ensemble.eval_sigma_t_mono(w, grid)
+                    expected_value = particle_ensemble.eval_sigma_t_mono(si, grid)
                     np.testing.assert_allclose(
                         result.m_as(expected_value.units),
                         expected_value.m,
