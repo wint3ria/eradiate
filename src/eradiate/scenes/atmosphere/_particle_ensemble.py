@@ -312,7 +312,9 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
         interpolated = pp.eval_ssa(np.atleast_1d(w))
         fractions = self.eval_fractions(grid)
         where_present = fractions > 0
-        albedo = np.multiply.outer(interpolated, where_present)
+        # np.multiply.outer() does not support pint Quantity operands, so the
+        # magnitude and units are combined by hand.
+        albedo = np.multiply.outer(interpolated.m, where_present) * interpolated.units
         return albedo
 
     @cache_by_id
@@ -326,9 +328,16 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
         sigma_t_star = pp.eval_ext(w)
         sigma_t_star_ref = pp.eval_ext(self.w_ref)
 
-        # Compute target optical thickness value
+        # Compute target optical thickness value. np.multiply.outer() does
+        # not support pint Quantity operands, so the magnitude and units are
+        # combined by hand.
+        sigma_t_star_ratio = sigma_t_star / sigma_t_star_ref
         tau_ref = np.atleast_2d(self.tau_ref)
-        tau = np.multiply.outer(sigma_t_star / sigma_t_star_ref, tau_ref)
+        tau = (
+            np.multiply.outer(sigma_t_star_ratio.m, tau_ref.m)
+            * sigma_t_star_ratio.units
+            * tau_ref.units
+        )
 
         # Scatter this total OT to all layers
         fractions = self.eval_fractions(grid)
