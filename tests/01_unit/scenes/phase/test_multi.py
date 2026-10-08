@@ -4,7 +4,7 @@ import pytest
 
 from eradiate import KernelContext
 from eradiate import unit_registry as ureg
-from eradiate.grid import PlaneParallelGridCoords
+from eradiate.grid import CartesianGrid
 from eradiate.scenes.core import traverse
 from eradiate.scenes.geometry import (
     PlaneParallelGeometry,
@@ -164,7 +164,7 @@ def test_multi_kernel_dict_2_components(mode_mono, weights, use_small_grid):
     """
     kwargs = {}
     if use_small_grid:
-        grid = PlaneParallelGridCoords(
+        grid = CartesianGrid(
             edges_x=np.array([-1.0, 1.0]) * ureg.km,
             edges_y=np.array([-1.0, 1.0]) * ureg.km,
             levels=np.linspace(0.0, 4.0, 5) * ureg.km,
@@ -252,7 +252,7 @@ def test_multi_kernel_dict_3_components(mode_mono):
 
 
 def _make_small_geometry():
-    grid = PlaneParallelGridCoords(
+    grid = CartesianGrid(
         edges_x=np.array([-1.0, 0.0, 1.0]) * ureg.km,
         edges_y=np.array([-1.0, 0.0, 1.0]) * ureg.km,
         levels=np.array([0.0, 1.0, 2.0]) * ureg.km,
