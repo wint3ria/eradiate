@@ -393,12 +393,16 @@ class TestParticleEnsemble:
             assert np.all(col[in_range] > 0.0)
             assert np.allclose(col[~in_range], 0.0)
 
-    def test_eval_fractions_scalar_bottom_top_with_3d_distribution(self):
+    def test_eval_fractions_with_3d_distribution(self):
         grid = _make_3d_grid()
         n_z = grid.layers.size
         values = np.zeros((2, 2, n_z))
         peak = np.arange(4).reshape(2, 2) % n_z
         np.put_along_axis(values, peak[..., np.newaxis], 1.0, axis=-1)
+
+        # bottom/top must share the distribution's own (x, y) grid shape
+        bottom = np.full((2, 2), grid.levels[0].m) * grid.levels.units
+        top = np.full((2, 2), grid.levels[-1].m) * grid.levels.units
 
         ensemble = ParticleEnsemble(
             geometry={
@@ -406,8 +410,8 @@ class TestParticleEnsemble:
                 "toa_altitude": grid.levels[-1],
                 "grid": grid,
             },
-            bottom=grid.levels[0],
-            top=grid.levels[-1],
+            bottom=bottom,
+            top=top,
             distribution=ArrayParticleDistribution(values=values, method="nearest"),
         )
 
