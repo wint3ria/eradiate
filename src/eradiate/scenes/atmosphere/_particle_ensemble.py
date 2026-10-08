@@ -272,19 +272,14 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
 
         -------
         ndarray
-            Particle number fractions as a ([n_x, n_y, ]n_layers,)-shaped
-            array. The leading spatial dimensions are only present if `bottom`
-            and `top` vary spatially; otherwise the result is a flat
-            (n_layers,)-shaped array.
+            Particle number fractions as a (n_x, n_y, n_layers)-shaped
+            array.
         """
 
         # Variable bottom and top altitude
-        bottom = np.atleast_1d(self.bottom)
-        extent = np.atleast_1d(self.top - self.bottom)
+        bottom = np.atleast_2d(self.bottom)
+        extent = np.atleast_2d(self.top - self.bottom)
         z = (grid.layers - bottom[..., np.newaxis]) / extent[..., np.newaxis]
-
-        if np.ndim(self.bottom) == 0:
-            z = z[0]
 
         fractions = self.distribution(z.m_as(ureg.dimensionless))
 
@@ -312,18 +307,18 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
     @cache_by_id
     def _eval_albedo_impl(self, w: pint.Quantity, grid: SpatialGrid) -> pint.Quantity:
         # Return albedo from dataset (without accounting for bypass switches)
-        # This routine returns an array of shape (n_wavelengths, [x, y, ]n_layers)
+        # This routine returns an array of shape (n_wavelengths, x, y, n_layers)
         pp = self.particle_properties
         interpolated = pp.eval_ssa(np.atleast_1d(w))
         fractions = self.eval_fractions(grid)
         where_present = fractions > 0
-        albedo = interpolated[..., np.newaxis] * where_present[np.newaxis, ...]
+        albedo = np.multiply.outer(interpolated, where_present)
         return albedo
 
     @cache_by_id
     def _eval_sigma_t_impl(self, w: pint.Quantity, grid: SpatialGrid) -> pint.Quantity:
         # Return extinction coefficient from dataset (without accounting
-        # for bypass switches). Returns an array of shape (n_wavelengths, [x, y, ]n_layers)
+        # for bypass switches). Returns an array of shape (n_wavelengths, x, y, n_layers)
 
         # Collect input data
         w = np.atleast_1d(w)
@@ -332,10 +327,8 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
         sigma_t_star_ref = pp.eval_ext(self.w_ref)
 
         # Compute target optical thickness value
-        sigma_t_star_expanded = sigma_t_star.reshape(
-            sigma_t_star.shape + (1,) * np.ndim(self.tau_ref)
-        )
-        tau = sigma_t_star_expanded * self.tau_ref / sigma_t_star_ref
+        tau_ref = np.atleast_2d(self.tau_ref)
+        tau = np.multiply.outer(sigma_t_star / sigma_t_star_ref, tau_ref)
 
         # Scatter this total OT to all layers
         fractions = self.eval_fractions(grid)
@@ -346,30 +339,20 @@ class ParticleEnsemble(AbstractHeterogeneousAtmosphere):
 
         return sigma_t
 
-    @staticmethod
-    def _pad_spatial_dims(value, ndim):
-        # Insert size-1 axes between the leading wavelength axis and the
-        # trailing layer axis so shapes with no spatial variation broadcast
-        # correctly against shapes that do vary spatially (via tau_ref).
-        extra = ndim - value.ndim
-        if extra <= 0:
-            return value
-        return value.reshape(value.shape[:1] + (1,) * extra + value.shape[1:])
-
     def _eval_sigma_a_impl(self, w: pint.Quantity, grid: SpatialGrid) -> pint.Quantity:
         # Return absorption coefficient from dataset (without accounting for
         # bypass switches). This routine is vectorized and returns an array of
-        # shape (n_wavelengths, n_layers)
+        # shape (n_wavelengths, n_x, n_y, n_layers)
         sigma_t = self._eval_sigma_t_impl(w, grid)
-        albedo = self._pad_spatial_dims(self._eval_albedo_impl(w, grid), sigma_t.ndim)
+        albedo = self._eval_albedo_impl(w, grid)
         return sigma_t * (1.0 - albedo.m)
 
     def _eval_sigma_s_impl(self, w: pint.Quantity, grid: SpatialGrid) -> pint.Quantity:
         # Return scattering coefficient from dataset (without accounting for
         # bypass switches). This routine is vectorized and returns an array of
-        # shape (n_wavelengths, n_layers)
+        # shape (n_wavelengths, n_x, n_y, n_layers)
         sigma_t = self._eval_sigma_t_impl(w, grid)
-        albedo = self._pad_spatial_dims(self._eval_albedo_impl(w, grid), sigma_t.ndim)
+        albedo = self._eval_albedo_impl(w, grid)
         return sigma_t * albedo.m
 
     @singledispatchmethod
