@@ -4,7 +4,7 @@ import pytest
 import eradiate
 from eradiate import unit_registry as ureg
 from eradiate.contexts import KernelContext
-from eradiate.grid import PlaneParallelGridCoords
+from eradiate.grid import CartesianGrid
 from eradiate.scenes.atmosphere import (
     HeterogeneousAtmosphere,
     MolecularAtmosphere,
@@ -43,7 +43,7 @@ def test_gridded_empty(modes_all_double):
     "geometry",
     [
         PlaneParallelGeometry(
-            grid=PlaneParallelGridCoords.make_default().resampled(3, 3)
+            grid=CartesianGrid.make_default().resampled(3, 3)
         ),
         # SphericalShellGeometry(), TBD convenience factories
     ],
