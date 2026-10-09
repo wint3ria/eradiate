@@ -89,14 +89,14 @@ class ParticleComponent(AbstractHeterogeneousAtmosphere):
 
     def eval_mfp(self, ctx: KernelContext) -> pint.Quantity:
         min_sigma_s = self.eval_sigma_s(ctx.si).min(axis=-1)
-        out = np.full(min_sigma_s.shape, np.inf)
-        np.divide(
-            np.ones(min_sigma_s.shape[:-1]),
-            min_sigma_s,
-            where=min_sigma_s != 0,
-            out=out,
-        )
-        return out * ureg.m
+        # Dividing a plain ndarray by a Quantity via np.divide(..., out=...)
+        # silently drops the Quantity's units (the result is written to a
+        # unitless buffer), so a hardcoded "* ureg.m" was previously tacked
+        # on -- only correct as long as eval_sigma_s() happens to return
+        # values already expressed in 1/m. Dividing the Quantity directly
+        # keeps pint in charge of the units, and 1/0 naturally yields inf.
+        with np.errstate(divide="ignore"):
+            return 1.0 / min_sigma_s
 
 
 @define(eq=False, slots=False)
@@ -610,12 +610,23 @@ class ParticleExtinctionComponent(ParticleComponent):
     def _interp(
         self, da: xr.DataArray, si: SpectralIndex, grid: SpatialGrid
     ) -> pint.Quantity:
-        coords = {
-            "w": np.atleast_1d(si.w.m_as(da.w.attrs["units"])),
-            "z": grid.layers.m_as(da.z.attrs["units"]),
-        }
-        result = da.interp(coords=coords, method="linear").squeeze("w", drop=True)
-        return to_quantity(result)
+        def _interp_axis(da, dim, values):
+            # A single-point axis is treated as uniform along that dimension
+            # (e.g. a single wavelength sample applies at every wavelength).
+            # Linear interpolation is undefined on a single point and
+            # xarray/scipy silently return NaN there, so fall back to an
+            # extrapolating nearest-neighbour lookup instead.
+            if da.sizes[dim] == 1:
+                return da.interp(
+                    coords={dim: values},
+                    method="nearest",
+                    kwargs={"fill_value": "extrapolate"},
+                )
+            return da.interp(coords={dim: values}, method="linear")
+
+        result = _interp_axis(da, "w", np.atleast_1d(si.w.m_as(da.w.attrs["units"])))
+        result = _interp_axis(result, "z", grid.layers.m_as(da.z.attrs["units"]))
+        return to_quantity(result.squeeze("w", drop=True))
 
     def _eval_sigma_a_impl(self, si: SpectralIndex, grid: SpatialGrid) -> pint.Quantity:
         sigma_t = self._interp(self.sigma_t, si, grid)
