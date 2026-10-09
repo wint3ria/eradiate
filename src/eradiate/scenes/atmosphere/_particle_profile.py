@@ -314,6 +314,6 @@ class ParticleProfile:
         veff_volume[ix, iy, iz] = self.data["veff"].values
 
         return (
-            reff_volume * ureg.Unit(self.data["reff"].attrs["units"]),
-            veff_volume * ureg.Unit(self.data["veff"].attrs["units"]),
+            pint.Quantity(reff_volume, self.data["reff"].attrs["units"]),
+            pint.Quantity(veff_volume, self.data["veff"].attrs["units"]),
         )
