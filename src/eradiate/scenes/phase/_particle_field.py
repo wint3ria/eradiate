@@ -1,6 +1,5 @@
 from __future__ import annotations
-
-import typing as t
+from typing import Callable
 
 import attrs
 import mitsuba as mi
@@ -58,7 +57,7 @@ class ParticleFieldPhaseFunction(PhaseFunction):
       angular index length built from ``mu``.
     """
 
-    r_eff_volume: t.Callable[[KernelContext], pint.Quantity] = documented(
+    r_eff_volume: Callable[[KernelContext], pint.Quantity] = documented(
         attrs.field(kw_only=True),
         doc="Callable that returns a dense ``(n_x, n_y, n_z)`` quantity of "
         "effective radius values (length units) on the render grid for a "
@@ -66,7 +65,7 @@ class ParticleFieldPhaseFunction(PhaseFunction):
         type="callable",
     )
 
-    v_eff_volume: t.Callable[[KernelContext], pint.Quantity] = documented(
+    v_eff_volume: Callable[[KernelContext], pint.Quantity] = documented(
         attrs.field(kw_only=True),
         doc="Callable that returns a dense ``(n_x, n_y, n_z)`` quantity of "
         "effective variance values (dimensionless) on the render grid for "
@@ -106,7 +105,7 @@ class ParticleFieldPhaseFunction(PhaseFunction):
         init_type="array-like or quantity",
     )
 
-    phase_data: t.Callable[[SpectralIndex], dict] = documented(
+    phase_data: Callable[[SpectralIndex], dict] = documented(
         attrs.field(kw_only=True),
         doc="Callable returning the phase properties for a given spectral "
         "index. Its return value is a dict with the keys ``mu``, ``phase``, "
