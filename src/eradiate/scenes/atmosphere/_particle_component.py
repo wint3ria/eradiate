@@ -55,7 +55,7 @@ class ParticleComponent(AbstractHeterogeneousAtmosphere):
     def _particle_properties_validator(self, attribute, value):
         if value.has_size_distribution:
             raise ValueError(
-                "While initialising ParticleEnsemble: 'particle_properties' "
+                    "While initializing ParticleEnsemble: 'particle_properties' "
                 "must not have 'reff'/'veff' dimensions; use ParticleField "
                 "for a spatially varying composition"
             )
