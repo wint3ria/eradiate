@@ -15,7 +15,7 @@ from axsdb import AbsorptionDatabase
 
 from ._core import AbstractHeterogeneousAtmosphere, atmosphere_factory
 from ._molecular import MolecularAtmosphere
-from ._particle_component import ParticleAOTComponent
+from ._particle_component import ParticleComponent
 from ..core import traverse
 from ..phase import MultiPhaseFunction, PhaseFunction
 from ...attrs import define, documented
@@ -50,7 +50,7 @@ def _particles_converter(value):
             if isinstance(element, cabc.MutableMapping) and ("type" not in element):
                 element["type"] = "particle_aot"
             result.append(
-                atmosphere_factory.convert(element, allowed_cls=ParticleAOTComponent)
+                atmosphere_factory.convert(element, allowed_cls=ParticleComponent)
             )
 
         return result
@@ -94,7 +94,7 @@ class HeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
             factory=list,
             converter=_particles_converter,
             validator=attrs.validators.deep_iterable(
-                attrs.validators.instance_of(ParticleAOTComponent)
+                attrs.validators.instance_of(ParticleComponent)
             ),
         ),
         doc="List of particle components. Elements may be specified as "
@@ -124,7 +124,7 @@ class HeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
     )
 
     @property
-    def components(self) -> list[MolecularAtmosphere | ParticleAOTComponent]:
+    def components(self) -> list[MolecularAtmosphere | ParticleComponent]:
         """
         Returns
         -------

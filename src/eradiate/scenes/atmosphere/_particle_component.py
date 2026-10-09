@@ -4,6 +4,7 @@ Particle components.
 
 from __future__ import annotations
 
+import typing as t
 import warnings
 from functools import singledispatchmethod
 
@@ -11,11 +12,12 @@ import attrs
 import numpy as np
 import pint
 import pinttrs
+import xarray as xr
 
 from ._core import AbstractHeterogeneousAtmosphere
 from ._particle_dist import ParticleDistribution, particle_distribution_factory
 from ..core import traverse
-from ..phase import ParticlePhaseFunction
+from ..phase import PhaseFunction, ParticlePhaseFunction, phase_function_factory
 from ...attrs import define, documented
 from ...contexts import KernelContext
 from ...grid import SpatialGrid
@@ -28,6 +30,7 @@ from ...spectral.index import (
 )
 from ...units import unit_context_config as ucc
 from ...units import unit_registry as ureg
+from ...units import to_quantity
 from ...util.misc import cache_by_id
 from ...validators import is_positive, all_positive
 
@@ -83,6 +86,17 @@ class ParticleComponent(AbstractHeterogeneousAtmosphere):
         type="bool",
         default="False",
     )
+
+    def eval_mfp(self, ctx: KernelContext) -> pint.Quantity:
+        min_sigma_s = self.eval_sigma_s(ctx.si).min(axis=-1)
+        out = np.full(min_sigma_s.shape, np.inf)
+        np.divide(
+            np.ones(min_sigma_s.shape[:-1]),
+            min_sigma_s,
+            where=min_sigma_s != 0,
+            out=out,
+        )
+        return out * ureg.m
 
 
 @define(eq=False, slots=False)
@@ -296,17 +310,6 @@ class ParticleAOTComponent(ParticleComponent):
 
         return out
 
-    def eval_mfp(self, ctx: KernelContext) -> pint.Quantity:
-        min_sigma_s = self.eval_sigma_s(ctx.si).min(axis=-1)
-        out = np.full(min_sigma_s.shape, np.inf)
-        np.divide(
-            np.ones(min_sigma_s.shape[:-1]),
-            min_sigma_s,
-            where=min_sigma_s != 0,
-            out=out,
-        )
-        return out * ureg.m
-
     # --------------------------------------------------------------------------
     #                       Radiative properties
     # --------------------------------------------------------------------------
@@ -507,6 +510,174 @@ class ParticleAOTComponent(ParticleComponent):
 
     @property
     def phase(self) -> ParticlePhaseFunction:
+        # Inherit docstring
+        return self._phase
+
+    @property
+    def _template_phase(self) -> dict:
+        result, _ = traverse(self.phase)
+        return result.data
+
+    @property
+    def _params_phase(self) -> dict[str, SceneParameter]:
+        _, result = traverse(self.phase)
+        return result.data
+
+
+@define(eq=False, slots=False)
+class ParticleExtinctionComponent(ParticleComponent):
+    """
+    Particle scene element configured by extinction and albedo
+    [``particle_extinction``].
+
+    This class is parameterized by absolute values of extinction and single
+    -scattering albedo provided through spatially defined data arrays.
+
+    ``sigma_t`` and ``albedo`` must be defined over exactly the ``(w, x, y,
+    z)`` dimensions, with ``w`` wavelength and ``x``/``y``/``z`` spatial axes
+    aligned with the scene geometry's grid. They are interpolated over ``w``
+    and ``z``; ``x``/``y`` are used as-is, so their values must already match
+    the scene geometry's horizontal grid shape.
+
+    This class accepts any factory-convertible phase function specification.
+    """
+
+    sigma_t: xr.DataArray = documented(
+        attrs.field(
+            kw_only=True,
+            validator=attrs.validators.instance_of(xr.DataArray),
+        ),
+        doc="Extinction coefficient. A ``DataArray`` whose dimensions are "
+        "exactly ``(w, x, y, z)``: ``w`` is wavelength, ``x``/``y``/``z`` "
+        "are spatial axes aligned with the scene geometry's grid. Values "
+        "and the ``w``/``z`` coordinates must carry a ``'units'`` entry in "
+        "their ``attrs``, as read by :func:`.to_quantity`. Must have "
+        "matching sizes with ``albedo``.",
+        type="DataArray",
+        init_type="DataArray",
+    )
+
+    albedo: xr.DataArray = documented(
+        attrs.field(
+            kw_only=True,
+            validator=attrs.validators.instance_of(xr.DataArray),
+        ),
+        doc="Single-scattering albedo. Same dimension and unit-metadata "
+        "convention as ``sigma_t`` (dimensionless), and must have matching "
+        "sizes with it. Values must lie in [0, 1].",
+        type="DataArray",
+        init_type="DataArray",
+    )
+
+    phase_spec: t.Any = documented(
+        attrs.field(kw_only=True, converter=phase_function_factory.convert),
+        doc="Phase function specification: a :class:`.PhaseFunction` "
+        "instance, or a dict/string the phase function factory can "
+        "convert.",
+        type="Any",
+        init_type="PhaseFunction or dict or str",
+    )
+
+    _phase: PhaseFunction | None = attrs.field(default=None, init=False)
+
+    @sigma_t.validator
+    @albedo.validator
+    def _dims_validator(self, attribute, value):
+        if set(value.dims) != {"w", "x", "y", "z"}:
+            raise ValueError(
+                f"while validating '{attribute.name}': dimensions must be "
+                "exactly ('w', 'x', 'y', 'z')"
+            )
+        if self.sigma_t.sizes != self.albedo.sizes:
+            raise ValueError(
+                f"while validating '{attribute.name}': sigma_t and albedo must "
+                f"have matching sizes (got {dict(self.sigma_t.sizes)} and "
+                f"{dict(self.albedo.sizes)})"
+            )
+
+    @albedo.validator
+    def _albedo_validator(self, attribute, value):
+        if np.any(value.values > 1.0):
+            raise ValueError("Albedo must be lower or equal to 1.0")
+
+    def update(self) -> None:
+        self._phase = self.phase_spec
+
+    # --------------------------------------------------------------------------
+    #                       Radiative properties
+    # --------------------------------------------------------------------------
+
+    def _interp(
+        self, da: xr.DataArray, si: SpectralIndex, grid: SpatialGrid
+    ) -> pint.Quantity:
+        coords = {
+            "w": np.atleast_1d(si.w.m_as(da.w.attrs["units"])),
+            "z": grid.layers.m_as(da.z.attrs["units"]),
+        }
+        result = da.interp(coords=coords, method="linear").squeeze("w", drop=True)
+        return to_quantity(result)
+
+    def _eval_sigma_a_impl(self, si: SpectralIndex, grid: SpatialGrid) -> pint.Quantity:
+        sigma_t = self._interp(self.sigma_t, si, grid)
+        albedo = self._interp(self.albedo, si, grid)
+        return sigma_t * (1.0 - albedo.m)
+
+    def _eval_sigma_s_impl(self, si: SpectralIndex, grid: SpatialGrid) -> pint.Quantity:
+        sigma_t = self._interp(self.sigma_t, si, grid)
+        albedo = self._interp(self.albedo, si, grid)
+        return sigma_t * albedo.m
+
+    def eval_sigma_t(
+        self, si: SpectralIndex, grid: SpatialGrid | None = None
+    ) -> pint.Quantity:
+        # Inherit docstring
+        grid = self.geometry.grid if grid is None else grid
+        result = self._interp(self.sigma_t, si, grid)
+
+        if self.has_absorption and self.has_scattering:
+            return result
+        elif not self.has_absorption and self.has_scattering:
+            return result - self._eval_sigma_a_impl(si, grid)
+        elif self.has_absorption and not self.has_scattering:
+            return result - self._eval_sigma_s_impl(si, grid)
+
+    def eval_sigma_a(
+        self, si: SpectralIndex, grid: SpatialGrid | None = None
+    ) -> pint.Quantity:
+        # Inherit docstring
+        grid = self.geometry.grid if grid is None else grid
+        value = self._eval_sigma_a_impl(si, grid)
+        return value if self.has_absorption else np.zeros_like(value) * value.units
+
+    def eval_sigma_s(
+        self, si: SpectralIndex, grid: SpatialGrid | None = None
+    ) -> pint.Quantity:
+        # Inherit docstring
+        grid = self.geometry.grid if grid is None else grid
+        value = self._eval_sigma_s_impl(si, grid)
+        return value if self.has_scattering else np.zeros_like(value) * value.units
+
+    def eval_albedo(
+        self, si: SpectralIndex, grid: SpatialGrid | None = None
+    ) -> pint.Quantity:
+        # Inherit docstring
+        grid = self.geometry.grid if grid is None else grid
+
+        if self.has_absorption and self.has_scattering:
+            return self._interp(self.albedo, si, grid)
+
+        # Degenerate cases: albedo is uniformly 0 or 1, but must still match
+        # sigma_t's natural (possibly 3D) shape.
+        sigma_t = self._interp(self.sigma_t, si, grid)
+        fill = 1.0 if self.has_scattering else 0.0
+        return np.full_like(sigma_t.m, fill) * ureg.dimensionless
+
+    # --------------------------------------------------------------------------
+    #                       Kernel dictionary generation
+    # --------------------------------------------------------------------------
+
+    @property
+    def phase(self) -> PhaseFunction:
         # Inherit docstring
         return self._phase
 

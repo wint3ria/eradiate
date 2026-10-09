@@ -61,8 +61,13 @@ atmosphere_factory.register_lazy_batch(
             {},
         ),
         (
-            "_particles.ParticleAOTComponent",
+            "_particle_component.ParticleAOTComponent",
             "particle_aot",
+            {},
+        ),
+        (
+            "_particle_component.ParticleExtinctionComponent",
+            "particle_extinction",
             {},
         ),
     ],
