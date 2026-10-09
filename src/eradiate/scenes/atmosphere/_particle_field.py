@@ -9,11 +9,14 @@ lookup dataset (wrapped in a :class:`.ParticleProperties`).
 
 from __future__ import annotations
 
+from collections import abc as cabc
+from typing import Any
+
 import attrs
 import numpy as np
 import xarray as xr
 
-from ._core import AbstractHeterogeneousAtmosphere
+from ._core import AbstractHeterogeneousAtmosphere, atmosphere_factory
 from ._particle_dist import ArrayParticleDistribution
 from ._particle_component import ParticleAOTComponent
 from ._particle_profile import ParticleProfile
@@ -59,6 +62,21 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
       be regular.
     * The render grid must be contained within the z-extent of the profile.
     """
+
+    @classmethod
+    def convert(cls, value: Any) -> ParticleField:
+        """
+        Conversion logic:
+
+        * If value is a ParticleField instance, return it unchanged.
+        * If value is a dictionary, it is interpreted by
+          :data:`.atmosphere_factory`; the ``"type"`` parameter may be
+          omitted and will automatically be set to ``"particle_field"``.
+        * Otherwise, the value is returned unchanged.
+        """
+        if isinstance(value, cabc.MutableMapping) and "type" not in value:
+            value = {**value, "type": "particle_field"}
+        return atmosphere_factory.convert(value, allowed_cls=cls)
 
     profile: ParticleProfile = documented(
         attrs.field(kw_only=True, converter=ParticleProfile.convert),

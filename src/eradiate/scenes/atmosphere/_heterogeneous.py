@@ -118,11 +118,18 @@ class HeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
             )
 
     particle_field: ParticleField | None = documented(
-        attrs.field(default=None, kw_only=True),
+        attrs.field(
+            default=None,
+            converter=attrs.converters.optional(ParticleField.convert),
+            kw_only=True,
+        ),
         doc="Optional particle field component providing spatially "
-        "heterogeneous cloud optical properties with trilinear interpolation.",
+        "heterogeneous cloud optical properties with trilinear interpolation. "
+        "May be specified as a dictionary interpreted by "
+        ":data:`.atmosphere_factory`; in that case, the ``type`` parameter "
+        'may be omitted and will automatically be set to ``"particle_field"``.',
         type=".ParticleField or None",
-        init_type=".ParticleField or None, optional",
+        init_type=".ParticleField or dict or None, optional",
         default="None",
     )
 
