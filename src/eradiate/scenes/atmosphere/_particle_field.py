@@ -121,7 +121,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         ssa = pp.eval_ssa(w)[0]
 
         coords = {
-            "reff": ("reff", pp.reff.m_as("micron"), {"units": "micron"}),
+            "reff": ("reff", pp.reff.m_as(ureg.micron), {"units": "micron"}),
             "veff": (
                 "veff",
                 pp.veff.m_as(ureg.dimensionless),
@@ -221,13 +221,13 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         extinction = (
             to_quantity(m_extinction)
             * to_quantity(resampled.data["mass_concentration"])
-        ).to("1/km")
+        ).to(ureg.km ** -1)
 
         sigma_t_values = np.zeros(
             (grid.n_cells_x, grid.n_cells_y, grid.n_cells_z), dtype=np.float64
         )
         sigma_t_values[ix, iy, iz] = extinction.m
-        return ureg.Quantity(sigma_t_values, "1/km")
+        return ureg.Quantity(sigma_t_values, ureg.km ** -1)
 
     def eval_albedo(
         self, si: SpectralIndex, grid: GridCoords | None = None
@@ -269,12 +269,12 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
                 (grid.n_cells_x, grid.n_cells_y, grid.n_cells_z), dtype=np.float64
             )
             albedo_values[ix, iy, iz] = to_quantity(albedo_da).m
-            return ureg.Quantity(albedo_values, "dimensionless")
+            return ureg.Quantity(albedo_values, ureg.dimensionless)
 
         if self.has_absorption:
-            return ureg.Quantity(0.0, "dimensionless")
+            return ureg.Quantity(0.0, ureg.dimensionless)
         if self.has_scattering:
-            return ureg.Quantity(1.0, "dimensionless")
+            return ureg.Quantity(1.0, ureg.dimensionless)
 
         raise RuntimeError(
             "At least one of 'has_absorption' or 'has_scattering' must be True."
@@ -302,7 +302,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         """
         grid = grid or self.geometry.grid
         if not self.has_scattering:
-            return ureg.Quantity(np.zeros(grid.shape, dtype=np.float64), "1/km")
+            return ureg.Quantity(np.zeros(grid.shape, dtype=np.float64), ureg.km ** -1)
         return self.eval_sigma_t(si, grid) * self.eval_albedo(si, grid).m_as(
             ureg.dimensionless
         )
@@ -329,7 +329,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         """
         grid = grid or self.geometry.grid
         if not self.has_absorption:
-            return ureg.Quantity(np.zeros(grid.shape, dtype=np.float64), "1/km")
+            return ureg.Quantity(np.zeros(grid.shape, dtype=np.float64), ureg.km ** -1)
         return self.eval_sigma_t(si, grid) * (
             1.0 - self.eval_albedo(si, grid).m_as(ureg.dimensionless)
         )
@@ -355,10 +355,10 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         """
         grid = grid or self.geometry.grid
         sigma_t = self.eval_sigma_t(si, grid)
-        sigma_t_values = sigma_t.m_as("1/m")
+        sigma_t_values = sigma_t.m_as(ureg.m ** -1)
         mfp_values = np.full(sigma_t_values.shape, np.inf, dtype=np.float64)
         np.divide(1.0, sigma_t_values, where=sigma_t_values != 0, out=mfp_values)
-        return ureg.Quantity(mfp_values, "m")
+        return ureg.Quantity(mfp_values, ureg.m)
 
     def _eval_phase_data(self, si: SpectralIndex) -> dict:
         """
@@ -497,7 +497,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         ).item()
 
         i_reff = int(
-            np.argmin(np.abs(pp.reff.m_as("micron") - reff_qty.m_as("micron")))
+            np.argmin(np.abs(pp.reff.m_as(ureg.micron) - reff_qty.m_as(ureg.micron)))
         )
         i_veff = int(
             np.argmin(
@@ -509,7 +509,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
 
         # Evaluate on the wavelength axis first, then pick this exact point.
         m_extinction = pp.eval_ext(wavelength)[0, i_reff, i_veff]
-        sigma_t = (m_extinction * mass_concentration_quantity).to("1/km")
+        sigma_t = (m_extinction * mass_concentration_quantity).to(ureg.km ** -1)
 
         layer_height = to_quantity(
             xr.DataArray(np.diff(grid.levels.m_as(ureg.km)), attrs={"units": "km"})
@@ -547,7 +547,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         )
         tau_ref = ureg.Quantity(
             (sigma_t * layer_height).m_as(ureg.dimensionless) * overlap,
-            "dimensionless",
+            ureg.dimensionless,
         )
 
         phase_ds = pp.phase_dataset_for_reff_veff(
@@ -670,11 +670,11 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         sigma_t_grid = np.zeros(
             (grid.n_cells_x, grid.n_cells_y, grid.n_cells_z), dtype=np.float64
         )
-        sigma_t_grid[ix, iy, iz] = sigma_t.m_as("1/km")
+        sigma_t_grid[ix, iy, iz] = sigma_t.m_as(ureg.km ** -1)
 
         layer_height = np.diff(grid.levels.m_as(ureg.km))
         tau_per_voxel = sigma_t_grid * layer_height[np.newaxis, np.newaxis, :]
-        tau_ref = ureg.Quantity(tau_per_voxel.sum(axis=-1), "dimensionless")
+        tau_ref = ureg.Quantity(tau_per_voxel.sum(axis=-1), ureg.dimensionless)
 
         z_coords = (grid.layers - grid.levels[0]) / (grid.levels[-1] - grid.levels[0])
         z_coords = np.broadcast_to(
@@ -775,7 +775,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
                 "i_z": (["index"], iz_arr),
                 "reff": (
                     ["index"],
-                    np.full(len(ix_arr), reff.m_as("micron")),
+                    np.full(len(ix_arr), reff.m_as(ureg.micron)),
                     {"units": "micron"},
                 ),
                 "veff": (
@@ -830,12 +830,12 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
                 "dimensionless",
             ),
             theta=ureg.Quantity(
-                theta_sorted[np.newaxis, np.newaxis, np.newaxis, :], "degree"
+                theta_sorted[np.newaxis, np.newaxis, np.newaxis, :], ureg.degree
             ),
             ext=m_extinction.reshape(1, 1, 1),
             ssa=albedo_at_wref.reshape(1, 1, 1),
             phase=ureg.Quantity(
-                phase_compact.reshape(n_phamat, 1, 1, 1, n_theta), "1/sr"
+                phase_compact.reshape(n_phamat, 1, 1, 1, n_theta), ureg.steradians ** -1
             ),
             pmom=np.zeros((1, 1, 1, 1)),
             reff=np.atleast_1d(reff),
