@@ -15,7 +15,7 @@ from axsdb import AbsorptionDatabase
 
 from ._core import AbstractHeterogeneousAtmosphere, atmosphere_factory
 from ._molecular import MolecularAtmosphere
-from ._particles import ParticleAOTComponent
+from ._particle_component import ParticleAOTComponent
 from ..core import traverse
 from ..phase import MultiPhaseFunction, PhaseFunction
 from ...attrs import define, documented
