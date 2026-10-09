@@ -28,6 +28,7 @@ from ...radprops._particles import ParticleProperties
 from ...spectral.index import MonoSpectralIndex, SpectralIndex
 from ...units import to_quantity
 from ...units import unit_registry as ureg
+from ...units import unit_context_kernel as uck
 from ...util.misc import cache_by_id
 
 PHAMAT_LABELS = {
@@ -213,6 +214,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             )
 
         grid = grid or self.geometry.grid
+        col_units = uck.get("collision_coefficient")
         resampled = self.profile.resample_regular(grid)
         ext_grid, _ = self._eval_ext_ssa_grid(si)
 
@@ -224,13 +226,13 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         extinction = (
             to_quantity(m_extinction)
             * to_quantity(resampled.data["mass_concentration"])
-        ).to(ureg.km ** -1)
+        ).to(col_units)
 
         sigma_t_values = np.zeros(
             (grid.n_cells_x, grid.n_cells_y, grid.n_cells_z), dtype=np.float64
         )
         sigma_t_values[ix, iy, iz] = extinction.m
-        return ureg.Quantity(sigma_t_values, ureg.km ** -1)
+        return ureg.Quantity(sigma_t_values, col_units)
 
     def eval_albedo(
         self, si: SpectralIndex, grid: GridCoords | None = None
@@ -306,11 +308,10 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             :math:`\\mathrm{km}^{-1}`.
         """
         grid = grid or self.geometry.grid
+        units = uck.get("collision_coefficient")
         if not self.has_scattering:
-            return ureg.Quantity(np.zeros(grid.shape, dtype=np.float64), ureg.km ** -1)
-        return self.eval_sigma_t(si, grid) * self.eval_albedo(si, grid).m_as(
-            ureg.dimensionless
-        )
+            return ureg.Quantity(np.zeros(grid.shape, dtype=np.float64), units)
+        return self.eval_sigma_t(si, grid) * self.eval_albedo(si, grid).m_as(units)
 
     def eval_sigma_a(
         self, si: SpectralIndex, grid: GridCoords | None = None
@@ -330,12 +331,11 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         -------
         :class:`pint.Quantity`
             Absorption coefficient array of shape
-            ``(n_cells_x, n_cells_y, n_cells_z)``, in units of
-            :math:`\\mathrm{km}^{-1}`.
+            ``(n_cells_x, n_cells_y, n_cells_z)``, dimensionless
         """
         grid = grid or self.geometry.grid
         if not self.has_absorption:
-            return ureg.Quantity(np.zeros(grid.shape, dtype=np.float64), ureg.km ** -1)
+            return ureg.Quantity(np.zeros(grid.shape, dtype=np.float64), ureg.dimensionless)
         return self.eval_sigma_t(si, grid) * (
             1.0 - self.eval_albedo(si, grid).m_as(ureg.dimensionless)
         )
@@ -361,11 +361,13 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             in metres.
         """
         grid = grid or self.geometry.grid
+        col_units = uck.get("collision_coefficient")
+        mfp_units = uck.get("length")
         sigma_t = self.eval_sigma_t(si, grid)
-        sigma_t_values = sigma_t.m_as(ureg.m ** -1)
+        sigma_t_values = sigma_t.m_as(col_units)
         mfp_values = np.full(sigma_t_values.shape, np.inf, dtype=np.float64)
         np.divide(1.0, sigma_t_values, where=sigma_t_values != 0, out=mfp_values)
-        return ureg.Quantity(mfp_values, ureg.m)
+        return ureg.Quantity(mfp_values, mfp_units)
 
     def _eval_phase_data(self, si: SpectralIndex) -> dict:
         """
@@ -494,6 +496,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             )
 
         grid = grid or particle_field.geometry.grid
+        col_units = uck.get("collision_coefficient")
         wavelength = np.atleast_1d(w)
         pp = particle_field.properties
 
@@ -519,7 +522,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
 
         # Evaluate on the wavelength axis first, then pick this exact point.
         m_extinction = pp.eval_ext(wavelength)[0, i_reff, i_veff]
-        sigma_t = (m_extinction * mass_concentration_quantity).to(ureg.km ** -1)
+        sigma_t = (m_extinction * mass_concentration_quantity).to(col_units)
 
         layer_height = to_quantity(
             xr.DataArray(np.diff(grid.levels.m_as(ureg.km)), attrs={"units": "km"})
@@ -669,6 +672,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         :class:`.ParticleEnsemble`
         """
         grid = grid or particle_field.geometry.grid
+        col_units = uck.get("collision_coefficient")
         wavelength = np.atleast_1d(w)
         pp = particle_field.properties
 
@@ -685,7 +689,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         sigma_t_grid = np.zeros(
             (grid.n_cells_x, grid.n_cells_y, grid.n_cells_z), dtype=np.float64
         )
-        sigma_t_grid[ix, iy, iz] = sigma_t.m_as(ureg.km ** -1)
+        sigma_t_grid[ix, iy, iz] = sigma_t.m_as(col_units)
 
         layer_height = np.diff(grid.levels.m_as(ureg.km))
         tau_per_voxel = sigma_t_grid * layer_height[np.newaxis, np.newaxis, :]
