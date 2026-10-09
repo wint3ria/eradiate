@@ -150,8 +150,10 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         -------
         mu : ndarray
             Shape ``(reff, veff, max angle count)``, NaN-padded.
+        
         phase : ndarray
             Shape ``(phamat, reff, veff, max angle count)``, NaN-padded.
+        
         nangles : ndarray
             Shape ``(reff, veff)``, valid angle count per pair.
         """
@@ -188,6 +190,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         ----------
         si : :class:`.SpectralIndex`
             Spectral index at which to evaluate.
+        
         grid : :class:`.GridCoords`, optional
             Target render grid.  Defaults to ``self.geometry.grid``.
 
@@ -239,6 +242,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         ----------
         si : :class:`.SpectralIndex`
             Spectral index at which to evaluate.
+        
         grid : :class:`.GridCoords`, optional
             Target render grid.  Defaults to ``self.geometry.grid``.
 
@@ -290,6 +294,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         ----------
         si : :class:`.SpectralIndex`
             Spectral index at which to evaluate.
+        
         grid : :class:`.GridCoords`, optional
             Target render grid.  Defaults to ``self.geometry.grid``.
 
@@ -317,6 +322,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         ----------
         si : :class:`.SpectralIndex`
             Spectral index at which to evaluate.
+        
         grid : :class:`.GridCoords`, optional
             Target render grid.  Defaults to ``self.geometry.grid``.
 
@@ -344,6 +350,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         ----------
         si : :class:`.SpectralIndex`
             Spectral index at which to evaluate.
+        
         grid : :class:`.GridCoords`, optional
             Target render grid.  Defaults to ``self.geometry.grid``.
 
@@ -464,13 +471,16 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         ----------
         particle_field : :class:`.ParticleField`
             Source particle field.
+        
         profile_point : xr.Dataset
             A single-point subset of a resampled profile dataset, e.g.
             obtained via
             ``particle_field.profile.resample_regular(...).data.sel(index=0)``.
             Must contain exactly one point along the ``index`` dimension.
+        
         w : :class:`pint.Quantity`
             Evaluation wavelength.
+        
         grid : :class:`.GridCoords`, optional
             Target render grid. Defaults to ``particle_field.geometry.grid``.
 
@@ -577,12 +587,16 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
 
         Parameters
         ----------
+        
         particle_field : :class:`.ParticleField`
             Source particle field.
+        
         w : :class:`pint.Quantity`
             Evaluation wavelength.
+        
         ix, iy, iz : int
             Voxel indices in the render grid.
+        
         grid : :class:`.GridCoords`, optional
             Target render grid. Defaults to ``particle_field.geometry.grid``.
 
@@ -631,13 +645,17 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         ----------
         particle_field : :class:`.ParticleField`
             Source particle field.
+
         w : :class:`pint.Quantity`
             Evaluation wavelength.
+
         i_reff, i_veff : int
             Index along ``particle_field.properties``'s ``reff``/``veff``
             dimensions, assumed constant across the whole field.
+
         grid : :class:`.GridCoords`, optional
             Target render grid. Defaults to ``particle_field.geometry.grid``.
+
         ext : :class:`pint.Quantity`, optional
             Extinction coefficient stored in the output ensemble's
             ``particle_properties``. Defaults to the native grid value at
@@ -717,12 +735,16 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         ----------
         particle_ensemble : :class:`.ParticleEnsemble`
             Source particle ensemble.
+
         mass_concentration : :class:`pint.Quantity`
             Mass concentration used to derive the mass extinction coefficient.
+
         reff : :class:`pint.Quantity`
             Effective radius of the particle species.
+
         veff : :class:`pint.Quantity`
             Effective variance (dimensionless) of the particle species.
+
         grid : :class:`.GridCoords`, optional
             Target render grid for the output :class:`.ParticleField`.
             If provided, ``particle_ensemble``'s radiative properties are
