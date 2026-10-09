@@ -545,10 +545,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         overlap = _compute_overlap(
             src_x0, src_x1, src_y0, src_y1, tgt_edges_x, tgt_edges_y
         )
-        tau_ref = ureg.Quantity(
-            (sigma_t * layer_height).m_as(ureg.dimensionless) * overlap,
-            ureg.dimensionless,
-        )
+        tau_ref = (sigma_t * layer_height * overlap).to(ureg.dimensionless)
 
         phase_ds = pp.phase_dataset_for_reff_veff(
             wavelength[0], i_reff, i_veff, sigma_t
