@@ -22,20 +22,24 @@ from ..units import unit_registry as ureg
 
 
 class WrapMode(Enum):
+    """Volume wrap mode flags."""
+
     CLAMP = "clamp"
     REPEAT = "repeat"
     MIRROR = "mirror"
 
     def __str__(self):
-        return self.name.lower()
+        return self.value
 
 
 class FilterType(Enum):
+    """Volume filter type flags."""
+
     TRILINEAR = "trilinear"
     NEAREST = "nearest"
 
     def __str__(self) -> str:
-        return self.name.lower()
+        return self.value
 
 
 @define
