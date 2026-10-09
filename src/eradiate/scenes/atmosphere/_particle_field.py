@@ -15,17 +15,18 @@ import xarray as xr
 
 from ._core import AbstractHeterogeneousAtmosphere
 from ._particle_dist import ArrayParticleDistribution
-from ._particle_ensemble import ParticleEnsemble
+from ._particle_component import ParticleAOTComponent
 from ._particle_profile import ParticleProfile
 from ..core import traverse
 from ..geometry import PlaneParallelGeometry
 from ..phase import ParticleFieldPhaseFunction
 from ...attrs import define, documented
 from ...data.convert import make_aer_core_v2
-from ...grid import GridCoords, PlaneParallelGridCoords
+from ...grid import SpatialGrid, CartesianGrid
 from ...kernel import SceneParameter
 from ...radprops._particles import ParticleProperties
 from ...spectral.index import MonoSpectralIndex, SpectralIndex
+from ...contexts import KernelContext
 from ...units import to_quantity
 from ...units import unit_registry as ureg
 from ...units import unit_context_kernel as uck
@@ -182,7 +183,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
     # --------------------------------------------------------------------------
 
     def eval_sigma_t(
-        self, si: SpectralIndex, grid: GridCoords | None = None
+        self, si: SpectralIndex, grid: SpatialGrid | None = None
     ) -> ureg.Quantity:
         """
         Evaluate the extinction coefficient on the render grid.
@@ -192,7 +193,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         si : :class:`.SpectralIndex`
             Spectral index at which to evaluate.
         
-        grid : :class:`.GridCoords`, optional
+        grid : :class:`.SpatialGrid`, optional
             Target render grid.  Defaults to ``self.geometry.grid``.
 
         Returns
@@ -235,7 +236,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         return ureg.Quantity(sigma_t_values, col_units)
 
     def eval_albedo(
-        self, si: SpectralIndex, grid: GridCoords | None = None
+        self, si: SpectralIndex, grid: SpatialGrid | None = None
     ) -> ureg.Quantity:
         """
         Evaluate the single-scattering albedo on the render grid.
@@ -245,7 +246,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         si : :class:`.SpectralIndex`
             Spectral index at which to evaluate.
         
-        grid : :class:`.GridCoords`, optional
+        grid : :class:`.SpatialGrid`, optional
             Target render grid.  Defaults to ``self.geometry.grid``.
 
         Returns
@@ -287,7 +288,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         )
 
     def eval_sigma_s(
-        self, si: SpectralIndex, grid: GridCoords | None = None
+        self, si: SpectralIndex, grid: SpatialGrid | None = None
     ) -> ureg.Quantity:
         """
         Evaluate the scattering coefficient on the render grid.
@@ -297,7 +298,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         si : :class:`.SpectralIndex`
             Spectral index at which to evaluate.
         
-        grid : :class:`.GridCoords`, optional
+        grid : :class:`.SpatialGrid`, optional
             Target render grid.  Defaults to ``self.geometry.grid``.
 
         Returns
@@ -314,7 +315,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         return self.eval_sigma_t(si, grid) * self.eval_albedo(si, grid).m_as(units)
 
     def eval_sigma_a(
-        self, si: SpectralIndex, grid: GridCoords | None = None
+        self, si: SpectralIndex, grid: SpatialGrid | None = None
     ) -> ureg.Quantity:
         """
         Evaluate the absorption coefficient on the render grid.
@@ -324,7 +325,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         si : :class:`.SpectralIndex`
             Spectral index at which to evaluate.
         
-        grid : :class:`.GridCoords`, optional
+        grid : :class:`.SpatialGrid`, optional
             Target render grid.  Defaults to ``self.geometry.grid``.
 
         Returns
@@ -340,19 +341,14 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             1.0 - self.eval_albedo(si, grid).m_as(ureg.dimensionless)
         )
 
-    def eval_mfp(
-        self, si: SpectralIndex, grid: GridCoords | None = None
-    ) -> ureg.Quantity:
+    def eval_mfp(self, ctx: KernelContext) -> ureg.Quantity:
         """
         Evaluate the mean free path on the render grid.
 
         Parameters
         ----------
-        si : :class:`.SpectralIndex`
-            Spectral index at which to evaluate.
-        
-        grid : :class:`.GridCoords`, optional
-            Target render grid.  Defaults to ``self.geometry.grid``.
+        ctx : :class:`.KernelContext`
+            Context defining the spectral index at which to evaluate.
 
         Returns
         -------
@@ -360,7 +356,8 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             Mean free path array of shape ``(n_cells_x, n_cells_y, n_cells_z)``,
             in metres.
         """
-        grid = grid or self.geometry.grid
+        si = ctx.si
+        grid = self.geometry.grid
         col_units = uck.get("collision_coefficient")
         mfp_units = uck.get("length")
         sigma_t = self.eval_sigma_t(si, grid)
@@ -418,9 +415,9 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
     #                       Profile-aligned geometry
     # --------------------------------------------------------------------------
 
-    def _profile_regular_grid(self) -> PlaneParallelGridCoords:
+    def _profile_regular_grid(self) -> CartesianGrid:
         """
-        Return a regular :class:`.PlaneParallelGridCoords` aligned with
+        Return a regular :class:`.CartesianGrid` aligned with
         and fine enough to resolve the profile's z-levels.
         """
 
@@ -435,7 +432,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         y_levels = self.profile.data["y_levels"].values * ureg.km
         z_levels = _regularize(self.profile.data["z_levels"].values) * ureg.km
 
-        return PlaneParallelGridCoords(
+        return CartesianGrid(
             edges_x=x_levels,
             edges_y=y_levels,
             levels=z_levels,
@@ -455,7 +452,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         return attrs.evolve(self, geometry=geometry)
 
     # --------------------------------------------------------------------------
-    #                       Voxel <-> ParticleEnsemble conversion
+    #                       Voxel <-> ParticleAOTComponent conversion
     # --------------------------------------------------------------------------
 
     @classmethod
@@ -464,10 +461,10 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         particle_field: ParticleField,
         profile_point: xr.Dataset,
         w: ureg.Quantity,
-        grid: GridCoords | None = None,
-    ) -> ParticleEnsemble:
+        grid: SpatialGrid | None = None,
+    ) -> ParticleAOTComponent:
         """
-        Build a :class:`.ParticleEnsemble` from a single profile point.
+        Build a :class:`.ParticleAOTComponent` from a single profile point.
 
         Parameters
         ----------
@@ -483,12 +480,12 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         w : :class:`pint.Quantity`
             Evaluation wavelength.
         
-        grid : :class:`.GridCoords`, optional
+        grid : :class:`.SpatialGrid`, optional
             Target render grid. Defaults to ``particle_field.geometry.grid``.
 
         Returns
         -------
-        :class:`.ParticleEnsemble`
+        :class:`.ParticleAOTComponent`
         """
         if profile_point.sizes.get("index", 1) != 1:
             raise ValueError(
@@ -564,7 +561,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             wavelength[0], i_reff, i_veff, sigma_t
         )
 
-        return ParticleEnsemble(
+        return ParticleAOTComponent(
             bottom=grid.levels[iz],
             top=grid.levels[iz + 1],
             distribution="uniform",
@@ -582,10 +579,10 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         ix: int,
         iy: int,
         iz: int,
-        grid: GridCoords | None = None,
-    ) -> ParticleEnsemble:
+        grid: SpatialGrid | None = None,
+    ) -> ParticleAOTComponent:
         """
-        Build a :class:`.ParticleEnsemble` representing a single voxel of the
+        Build a :class:`.ParticleAOTComponent` representing a single voxel of the
         particle field at the given grid location.
 
         Parameters
@@ -600,12 +597,12 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         ix, iy, iz : int
             Voxel indices in the render grid.
         
-        grid : :class:`.GridCoords`, optional
+        grid : :class:`.SpatialGrid`, optional
             Target render grid. Defaults to ``particle_field.geometry.grid``.
 
         Returns
         -------
-        :class:`.ParticleEnsemble`
+        :class:`.ParticleAOTComponent`
         """
         grid = grid or particle_field.geometry.grid
 
@@ -633,11 +630,11 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         w: ureg.Quantity,
         i_reff: int,
         i_veff: int,
-        grid: GridCoords | None = None,
+        grid: SpatialGrid | None = None,
         ext: ureg.Quantity | None = None,
-    ) -> ParticleEnsemble:
+    ) -> ParticleAOTComponent:
         """
-        Build a single :class:`.ParticleEnsemble` approximating the whole
+        Build a single :class:`.ParticleAOTComponent` approximating the whole
         field with one fixed ``(reff, veff)`` grid point.
 
         Every voxel's own ``reff``/``veff`` is ignored in favour of the
@@ -656,7 +653,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             Index along ``particle_field.properties``'s ``reff``/``veff``
             dimensions, assumed constant across the whole field.
 
-        grid : :class:`.GridCoords`, optional
+        grid : :class:`.SpatialGrid`, optional
             Target render grid. Defaults to ``particle_field.geometry.grid``.
 
         ext : :class:`pint.Quantity`, optional
@@ -669,7 +666,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
 
         Returns
         -------
-        :class:`.ParticleEnsemble`
+        :class:`.ParticleAOTComponent`
         """
         grid = grid or particle_field.geometry.grid
         col_units = uck.get("collision_coefficient")
@@ -711,7 +708,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             else attrs.evolve(particle_field.geometry, grid=grid)
         )
 
-        return ParticleEnsemble(
+        return ParticleAOTComponent(
             bottom=grid.levels[0],
             top=grid.levels[-1],
             distribution=distribution,
@@ -726,18 +723,18 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
     @classmethod
     def from_particle_ensemble(
         cls,
-        particle_ensemble: ParticleEnsemble,
+        particle_ensemble: ParticleAOTComponent,
         mass_concentration: ureg.Quantity,
         reff: ureg.Quantity,
         veff: ureg.Quantity,
-        grid: GridCoords | None = None,
+        grid: SpatialGrid | None = None,
     ) -> ParticleField:
         """
-        Build a :class:`.ParticleField` from a :class:`.ParticleEnsemble`.
+        Build a :class:`.ParticleField` from a :class:`.ParticleAOTComponent`.
 
         Parameters
         ----------
-        particle_ensemble : :class:`.ParticleEnsemble`
+        particle_ensemble : :class:`.ParticleAOTComponent`
             Source particle ensemble.
 
         mass_concentration : :class:`pint.Quantity`
@@ -749,7 +746,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         veff : :class:`pint.Quantity`
             Effective variance (dimensionless) of the particle species.
 
-        grid : :class:`.GridCoords`, optional
+        grid : :class:`.SpatialGrid`, optional
             Target render grid for the output :class:`.ParticleField`.
             If provided, ``particle_ensemble``'s radiative properties are
             evaluated on it instead of its own geometry's grid.

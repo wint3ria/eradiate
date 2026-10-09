@@ -18,7 +18,7 @@ import xarray as xr
 
 from ...attrs import define, documented
 from ...converters import load_dataset
-from ...grid import GridCoords, PlaneParallelGridCoords, SphericalShellGridCoords
+from ...grid import SpatialGrid, CartesianGrid, SphericalGrid
 from ...units import to_quantity
 from ...units import unit_registry as ureg
 from ...util.misc import cache_by_id
@@ -115,7 +115,7 @@ class ParticleProfile:
             raise ValueError(f"'{name}' must be regularly spaced")
 
     @singledispatchmethod
-    def resample_regular(self, grid: GridCoords) -> ParticleProfile:
+    def resample_regular(self, grid: SpatialGrid) -> ParticleProfile:
         """
         Resample the profile onto a regular grid.
 
@@ -126,7 +126,7 @@ class ParticleProfile:
 
         Parameters
         ----------
-        grid : .GridCoords
+        grid : .SpatialGrid
             Target regular grid.
 
         Returns
@@ -144,7 +144,7 @@ class ParticleProfile:
             f"resample_regular() is not implemented for grid type {type(grid).__name__}"
         )
 
-    @resample_regular.register(PlaneParallelGridCoords)
+    @resample_regular.register(CartesianGrid)
     def _(self, grid) -> ParticleProfile:
         x_levels = to_quantity(self.data["x_levels"]).m_as(grid.edges_x.units)
         y_levels = to_quantity(self.data["y_levels"]).m_as(grid.edges_y.units)
@@ -164,7 +164,7 @@ class ParticleProfile:
 
         return self._resample_z(grid, grid.edges_x, grid.edges_y)
 
-    @resample_regular.register(SphericalShellGridCoords)
+    @resample_regular.register(SphericalGrid)
     def _(self, grid) -> ParticleProfile:
         x_levels = to_quantity(self.data["x_levels"]).m_as(grid.azimuths.units)
         y_levels = to_quantity(self.data["y_levels"]).m_as(grid.colatitudes.units)
@@ -187,7 +187,7 @@ class ParticleProfile:
     @cache_by_id
     def _resample_z(
         self,
-        grid: GridCoords,
+        grid: SpatialGrid,
         x_levels_out: ureg.Quantity,
         y_levels_out: ureg.Quantity,
     ) -> ParticleProfile:
@@ -197,7 +197,7 @@ class ParticleProfile:
 
         Parameters
         ----------
-        grid : .GridCoords
+        grid : .SpatialGrid
             Target grid providing ``z`` layer centres.
         x_levels_out, y_levels_out : :class:`pint.Quantity`
             Horizontal level edges to store on the output profile, as-is.

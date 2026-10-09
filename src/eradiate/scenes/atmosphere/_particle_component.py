@@ -51,15 +51,6 @@ def _particle_distribution_converter(value):
 class ParticleComponent(AbstractHeterogeneousAtmosphere):
     """Abstract base class for particulate media"""
 
-    @particle_properties.validator
-    def _particle_properties_validator(self, attribute, value):
-        if value.has_size_distribution:
-            raise ValueError(
-                    "While initializing ParticleEnsemble: 'particle_properties' "
-                "must not have 'reff'/'veff' dimensions; use ParticleField "
-                "for a spatially varying composition"
-            )
-
     has_absorption: bool = documented(
         attrs.field(default=True, converter=bool),
         doc="Absorption bypass switch. If ``True``, the absorption coefficient "
@@ -261,6 +252,15 @@ class ParticleAOTComponent(ParticleComponent):
         init_type="ParticleProperties or Dataset or path-like or str",
         default='"govaerts_2021-continental"',
     )
+
+    @particle_properties.validator
+    def _particle_properties_validator(self, attribute, value):
+        if value.has_size_distribution:
+            raise ValueError(
+                "While initializing ParticleAOTComponent: 'particle_properties' "
+                "must not have 'reff'/'veff' dimensions; use ParticlePSDComponent "
+                "for a spatially varying composition"
+            )
 
     _phase: ParticlePhaseFunction | None = attrs.field(default=None, init=False)
 

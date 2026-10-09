@@ -135,6 +135,7 @@ class HeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
         default="True",
     )
 
+    @property
     def components(
         self,
     ) -> list[MolecularAtmosphere | ParticleComponent | ParticleField]:
@@ -145,7 +146,7 @@ class HeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
             The list of all registered atmospheric components.
         """
         result = [self.molecular_atmosphere] if self.molecular_atmosphere else []
-        result.extend(self.particle_ensembles)
+        result.extend(self.particle_components)
         if self.particle_field is not None:
             result.append(self.particle_field)
         return result
