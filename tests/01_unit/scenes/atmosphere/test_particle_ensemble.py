@@ -65,7 +65,7 @@ def _make_3d_grid():
     )
 
 
-class TestParticleEnsemble:
+class TestParticleAOTComponent:
     @pytest.mark.parametrize("geometry", ["plane_parallel", "spherical_shell"])
     def test_basic(self, mode_mono, geometry):
         """Basic constructor pattern"""
@@ -156,7 +156,7 @@ class TestParticleEnsemble:
         )
 
         with pytest.raises(ValueError, match="reff.*veff"):
-            ParticleEnsemble(
+            ParticleAOTComponent(
                 particle_properties=properties_with_size_dist,
                 w_ref=ureg.Quantity(1.0, "micron"),
             )

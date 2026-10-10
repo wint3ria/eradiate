@@ -3,8 +3,8 @@ import pytest
 import xarray as xr
 
 from eradiate.data.convert import make_aer_core_v2
-from eradiate.grid import PlaneParallelGridCoords
-from eradiate.scenes.atmosphere import ParticleEnsemble
+from eradiate.grid import CartesianGrid
+from eradiate.scenes.atmosphere import ParticleAOTComponent
 from eradiate.scenes.atmosphere._particle_field import PHAMAT_LABELS, ParticleField
 from eradiate.scenes.geometry import PlaneParallelGeometry
 from eradiate.scenes.phase import ParticleFieldPhaseFunction
@@ -56,7 +56,7 @@ def make_properties_dataset(
 
 
 def make_profile_dataset(
-    grid: PlaneParallelGridCoords,
+    grid: CartesianGrid,
     reff=10.0,
     veff=0.1,
     mass_concentration=1e-3,
@@ -125,7 +125,7 @@ def make_particle_field(
     has_scattering=True,
 ) -> ParticleField:
     """Build a dense, spatially-uniform :class:`.ParticleField`."""
-    grid = PlaneParallelGridCoords(
+    grid = CartesianGrid(
         edges_x=np.linspace(0.0, x_extent.m_as("km"), n_x + 1) * ureg.km,
         edges_y=np.linspace(0.0, y_extent.m_as("km"), n_y + 1) * ureg.km,
         levels=np.linspace(0.0, z_extent.m_as("km"), n_z + 1) * ureg.km,
@@ -151,7 +151,7 @@ def _make_z_profile_particle_field(z_levels_src, target_levels):
     z_levels_src = np.asarray(z_levels_src, dtype=float)
     z_centers_src = 0.5 * (z_levels_src[:-1] + z_levels_src[1:])
 
-    target_grid = PlaneParallelGridCoords(
+    target_grid = CartesianGrid(
         edges_x=np.array([-1.0, 1.0]) * ureg.km,
         edges_y=np.array([-1.0, 1.0]) * ureg.km,
         levels=np.asarray(target_levels, dtype=float) * ureg.km,
@@ -185,8 +185,8 @@ def make_particle_ensemble(
     n_mu=5,
     bottom=0.0 * ureg.km,
     top=2.0 * ureg.km,
-) -> ParticleEnsemble:
-    """Build a minimal single-phamat, spatially-uniform :class:`.ParticleEnsemble`."""
+) -> ParticleAOTComponent:
+    """Build a minimal single-phamat, spatially-uniform :class:`.ParticleAOTComponent`."""
     mu = np.linspace(-1.0, 1.0, n_mu)
     theta = np.rad2deg(np.arccos(mu))
 
@@ -201,14 +201,14 @@ def make_particle_ensemble(
         pmom=np.zeros((1, 1)),
     )
 
-    grid = PlaneParallelGridCoords(
+    grid = CartesianGrid(
         edges_x=np.array([-1.0, 1.0]) * ureg.km,
         edges_y=np.array([-1.0, 1.0]) * ureg.km,
         levels=np.array([bottom.m_as("km"), top.m_as("km")]) * ureg.km,
     )
     geometry = PlaneParallelGeometry(grid=grid, toa_altitude=grid.levels[-1])
 
-    return ParticleEnsemble(
+    return ParticleAOTComponent(
         bottom=bottom,
         top=top,
         distribution="uniform",
@@ -231,7 +231,7 @@ def test_particle_field_construct_basic():
 )
 def test_profile_regular_grid(z_levels):
     """_profile_regular_grid halves the profile's smallest z-gap and preserves x/y extent."""
-    grid = PlaneParallelGridCoords(
+    grid = CartesianGrid(
         edges_x=np.array([0.0, 2.0, 4.0]) * ureg.km,
         edges_y=np.array([1.0, 3.0]) * ureg.km,
         levels=np.array([0.0, 1.0, 2.0, 3.0, 4.0]) * ureg.km,
@@ -350,7 +350,7 @@ def test_reff_veff_interpolation_and_clipping():
     reff/veff (dense, no ragged structure); voxels sitting outside the
     properties grid range are clipped rather than turning into NaN.
     """
-    grid = PlaneParallelGridCoords(
+    grid = CartesianGrid(
         edges_x=np.array([-1.0, 0.0, 1.0]) * ureg.km,
         edges_y=np.array([-1.0, 1.0]) * ureg.km,
         levels=np.array([0.0, 1.0]) * ureg.km,
@@ -521,7 +521,7 @@ def test_to_particle_ensemble_tau_ref_concentrated_at_voxel(mode_mono):
 
     layer = ParticleField.to_particle_ensemble(pf, w=w, ix=0, iy=1, iz=0)
 
-    assert isinstance(layer, ParticleEnsemble)
+    assert isinstance(layer, ParticleAOTComponent)
     assert layer.bottom == grid.levels[0]
     assert layer.top == grid.levels[1]
     assert layer.w_ref == w
@@ -569,7 +569,7 @@ def test_to_particle_ensemble_fixed_composition_matches_field(mode_mono):
         i_veff=0,
     )
 
-    assert isinstance(ensemble, ParticleEnsemble)
+    assert isinstance(ensemble, ParticleAOTComponent)
     assert ensemble.tau_ref.m_as("dimensionless").shape == (
         grid.n_cells_x,
         grid.n_cells_y,
@@ -619,7 +619,7 @@ def test_to_particle_ensemble_fixed_composition_zero_density_column(mode_mono):
 
 def test_particle_field_properties_requires_size_distribution():
     """Constructing a ParticleField with a properties dataset lacking reff/veff raises."""
-    grid = PlaneParallelGridCoords(
+    grid = CartesianGrid(
         edges_x=np.array([-1.0, 1.0]) * ureg.km,
         edges_y=np.array([-1.0, 1.0]) * ureg.km,
         levels=np.array([0.0, 1.0]) * ureg.km,
@@ -677,7 +677,7 @@ def test_from_particle_ensemble_roundtrip(mode_mono):
 def test_from_particle_ensemble_custom_grid(mode_mono):
     """from_particle_ensemble evaluates onto an explicitly given grid instead of the ensemble's own."""
     layer = make_particle_ensemble()
-    custom_grid = PlaneParallelGridCoords(
+    custom_grid = CartesianGrid(
         edges_x=np.array([-2.0, 2.0]) * ureg.km,
         edges_y=np.array([-2.0, 2.0]) * ureg.km,
         levels=np.array([0.0, 1.0, 2.0]) * ureg.km,
@@ -702,7 +702,7 @@ def test_theta_convention_consistency(mode_mono):
     mu_values_asc = np.cos(np.deg2rad(theta_values_desc))
     n_theta = len(theta_values_desc)
 
-    grid = PlaneParallelGridCoords(
+    grid = CartesianGrid(
         edges_x=np.array([-1.0, 1.0]) * ureg.km,
         edges_y=np.array([-1.0, 1.0]) * ureg.km,
         levels=np.array([0.0, 1.0, 2.0]) * ureg.km,
@@ -792,7 +792,7 @@ def test_multi_reff_veff_ws(mode_mono):
     assert properties.sizes["veff"] == 2
     assert properties.sizes["w"] == 3
 
-    grid = PlaneParallelGridCoords(
+    grid = CartesianGrid(
         edges_x=np.array([-1.0, 1.0]) * ureg.km,
         edges_y=np.array([-1.0, 1.0]) * ureg.km,
         levels=np.array([0.0, 1.0, 2.0]) * ureg.km,

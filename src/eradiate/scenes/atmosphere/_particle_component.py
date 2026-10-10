@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import typing as t
 import warnings
+from collections import abc as cabc
 from functools import singledispatchmethod
 
 import attrs
@@ -14,7 +15,7 @@ import pint
 import pinttrs
 import xarray as xr
 
-from ._core import AbstractHeterogeneousAtmosphere
+from ._core import AbstractHeterogeneousAtmosphere, atmosphere_factory
 from ._particle_dist import ParticleDistribution, particle_distribution_factory
 from ..core import traverse
 from ..phase import PhaseFunction, ParticlePhaseFunction, phase_function_factory
@@ -50,6 +51,21 @@ def _particle_distribution_converter(value):
 @define(eq=False, slots=False)
 class ParticleComponent(AbstractHeterogeneousAtmosphere):
     """Abstract base class for particulate media"""
+
+    @classmethod
+    def convert(cls, value: t.Any) -> ParticleComponent:
+        """
+        Conversion logic:
+
+        * If value is a ParticleComponent instance, return it unchanged.
+        * If value is a dictionary, it is interpreted by
+          :data:`.atmosphere_factory`; the ``"type"`` parameter may be
+          omitted and will automatically be set to ``"particle_aot"``.
+        * Otherwise, the value is returned unchanged.
+        """
+        if isinstance(value, cabc.MutableMapping) and "type" not in value:
+            value = {**value, "type": "particle_aot"}
+        return atmosphere_factory.convert(value, allowed_cls=cls)
 
     has_absorption: bool = documented(
         attrs.field(default=True, converter=bool),
@@ -87,6 +103,7 @@ class ParticleComponent(AbstractHeterogeneousAtmosphere):
     )
 
     def eval_mfp(self, ctx: KernelContext) -> pint.Quantity:
+        # Inherit docstring
         min_sigma_s = self.eval_sigma_s(ctx.si).min(axis=-1)
         # Set to inf if sigma_s is zero
         with np.errstate(divide="ignore"):

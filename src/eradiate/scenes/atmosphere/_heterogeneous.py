@@ -42,18 +42,7 @@ def _particles_converter(value):
         return []
     if not isinstance(value, (list, tuple)):
         return _particles_converter([value])
-
-    else:
-        result = []
-
-        for element in value:
-            if isinstance(element, cabc.MutableMapping) and ("type" not in element):
-                element["type"] = "particle_aot"
-            result.append(
-                atmosphere_factory.convert(element, allowed_cls=ParticleComponent)
-            )
-
-        return result
+    return [ParticleComponent.convert(element) for element in value]
 
 
 @define(eq=False, slots=False)

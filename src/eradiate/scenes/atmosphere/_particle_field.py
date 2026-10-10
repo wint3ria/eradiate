@@ -360,29 +360,10 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         )
 
     def eval_mfp(self, ctx: KernelContext) -> ureg.Quantity:
-        """
-        Evaluate the mean free path on the render grid.
-
-        Parameters
-        ----------
-        ctx : :class:`.KernelContext`
-            Context defining the spectral index at which to evaluate.
-
-        Returns
-        -------
-        :class:`pint.Quantity`
-            Mean free path array of shape ``(n_cells_x, n_cells_y, n_cells_z)``,
-            in metres.
-        """
-        si = ctx.si
-        grid = self.geometry.grid
-        col_units = uck.get("collision_coefficient")
-        mfp_units = uck.get("length")
-        sigma_t = self.eval_sigma_t(si, grid)
-        sigma_t_values = sigma_t.m_as(col_units)
-        mfp_values = np.full(sigma_t_values.shape, np.inf, dtype=np.float64)
-        np.divide(1.0, sigma_t_values, where=sigma_t_values != 0, out=mfp_values)
-        return ureg.Quantity(mfp_values, mfp_units)
+        # Inherit docstring
+        min_sigma_s = self.eval_sigma_s(ctx.si).min(axis=-1)
+        with np.errstate(divide="ignore"):
+            return 1.0 / min_sigma_s
 
     def _eval_phase_data(self, si: SpectralIndex) -> dict:
         """
