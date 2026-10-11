@@ -156,46 +156,6 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         )
         return ext_da, ssa_da
 
-    @cache_by_id
-    def _eval_phase_grid(
-        self, si: SpectralIndex
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Evaluate the phase function at ``si.w`` for every ``(reff, veff)``
-        pair. Each pair's phase function is normalized independently, and
-        pairs do not share the same angular discretization. Results are
-        packed into NaN-padded arrays sized to the pair with the most angles.
-
-        Returns
-        -------
-        mu : ndarray
-            Shape ``(reff, veff, max angle count)``, NaN-padded.
-        
-        phase : ndarray
-            Shape ``(phamat, reff, veff, max angle count)``, NaN-padded.
-        
-        nangles : ndarray
-            Shape ``(reff, veff)``, valid angle count per pair.
-        """
-        return self.properties.eval_phase_grid(si.w)
-
-    @cache_by_id
-    def _eval_phase_union(self, si: SpectralIndex) -> tuple[np.ndarray, np.ndarray]:
-        """
-        Evaluate the phase function at ``si.w`` for every ``(reff, veff)``
-        pair, one pair per row, NaN-padded to the widest pair's length.
-
-        Returns
-        -------
-        mu : ndarray
-            Scattering angle cosines, shape ``(n_reff * n_veff, max_len)``.
-
-        phase : ndarray
-            Phase function values, shape
-            ``(n_reff * n_veff, n_phamat, max_len)``.
-        """
-        return self.properties.eval_phase_union(si.w)
-
     # --------------------------------------------------------------------------
     #                       Radiative properties
     # --------------------------------------------------------------------------
@@ -371,13 +331,19 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         with np.errstate(divide="ignore"):
             return 1.0 / min_sigma_s
 
+    @cache_by_id
     def _eval_phase_data(self, si: SpectralIndex) -> dict:
         """
-        Combine :meth:`_eval_phase_union` and :meth:`_eval_ext_ssa_grid`'s
-        results into the dict expected by
-        :class:`.ParticleFieldPhaseFunction`'s ``phase_data`` callable.
+        Build the dict expected by :class:`.ParticleFieldPhaseFunction`'s
+        ``phase_data`` callable: ``mu``/``phase`` flattened to one row per
+        ``(reff, veff)`` pair, combined with :meth:`_eval_ext_ssa_grid`.
         """
-        mu, phase = self._eval_phase_union(si)
+        n_reff, n_veff = self.properties.reff.size, self.properties.veff.size
+        mu, phase = self.properties.eval_phase(si.w)
+        n_phamat, _, _, max_len = phase.shape
+        mu = mu.reshape(n_reff * n_veff, max_len)
+        phase = phase.reshape(n_phamat, n_reff * n_veff, max_len).transpose(1, 0, 2)
+
         ext_grid, ssa_grid = self._eval_ext_ssa_grid(si)
         return {
             "mu": mu,

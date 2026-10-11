@@ -456,12 +456,19 @@ def test_phase_override_bypasses_construction():
 
 
 def test_eval_phase_data_matches_grid_evals():
-    """_eval_phase_data returns exactly _eval_phase_union and _eval_ext_ssa_grid's own results, combined."""
+    """_eval_phase_data flattens eval_phase's result and combines it with _eval_ext_ssa_grid's."""
     pf = make_particle_field(w=(1.0,))
     si = MonoSpectralIndex(w=ureg.Quantity(1.0, "micron"))
 
     data = pf._eval_phase_data(si)
-    expected_mu, expected_phase = pf._eval_phase_union(si)
+
+    n_reff, n_veff = pf.properties.reff.size, pf.properties.veff.size
+    mu, phase = pf.properties.eval_phase(si.w)
+    n_phamat, _, _, max_len = phase.shape
+    expected_mu = mu.reshape(n_reff * n_veff, max_len)
+    expected_phase = phase.reshape(n_phamat, n_reff * n_veff, max_len).transpose(
+        1, 0, 2
+    )
     expected_ext, expected_ssa = pf._eval_ext_ssa_grid(si)
 
     np.testing.assert_allclose(data["mu"], expected_mu)
