@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from eradiate.data.convert import make_aer_core_v2
+from eradiate.contexts import KernelContext
+from eradiate.data.convert import make_aer_core_v2, make_prt_cloud_v1
 from eradiate.grid import CartesianGrid
 from eradiate.scenes.atmosphere import ParticleAOTComponent
 from eradiate.scenes.atmosphere._particle_field import PHAMAT_LABELS, ParticleField
@@ -42,7 +43,7 @@ def make_properties_dataset(
         np.asarray(phase_value, dtype=float), (nphamat, nw, nreff, nveff, n_theta)
     ).copy()
 
-    return make_aer_core_v2(
+    return make_prt_cloud_v1(
         w=w_values * ureg.micron,
         phamat=PHAMAT_LABELS[nphamat],
         mu=mu * ureg.dimensionless,
@@ -224,6 +225,38 @@ def test_particle_field_construct_basic():
     assert isinstance(make_particle_field(), ParticleField)
 
 
+def test_particle_field_convert_passthrough():
+    """ParticleField.convert returns an existing instance unchanged."""
+    field = make_particle_field()
+    assert ParticleField.convert(field) is field
+
+
+def test_particle_field_convert_from_dict():
+    """A dict (with 'type' omitted) is routed through atmosphere_factory,
+    defaulting to the 'particle_field' type id, to build a ParticleField."""
+    grid = CartesianGrid(
+        edges_x=np.array([0.0, 1.0, 2.0]) * ureg.km,
+        edges_y=np.array([0.0, 1.0, 2.0]) * ureg.km,
+        levels=np.array([0.0, 1.0, 2.0, 3.0]) * ureg.km,
+    )
+    geometry = PlaneParallelGeometry(grid=grid, toa_altitude=grid.levels[-1])
+
+    result = ParticleField.convert(
+        {
+            "profile": make_profile_dataset(grid),
+            "properties": make_properties_dataset(),
+            "geometry": geometry,
+        }
+    )
+    assert isinstance(result, ParticleField)
+
+
+def test_particle_field_convert_rejects_wrong_type():
+    """A value that is neither a dict nor a ParticleField instance is rejected."""
+    with pytest.raises(TypeError):
+        ParticleField.convert(object())
+
+
 @pytest.mark.parametrize(
     "z_levels",
     [[0.0, 1.0, 2.0, 3.0, 4.0], [0.0, 1.0, 1.5, 4.0]],
@@ -303,11 +336,11 @@ def test_eval_family_values(has_absorption, has_scattering, expected):
     assert sigma_a.shape == shape
     np.testing.assert_allclose(sigma_a.m_as("1/km"), expected["sigma_a"])
 
-    mfp = pf.eval_mfp(si)
+    mfp = pf.eval_mfp(KernelContext(si=si))
     assert mfp.units == ureg.Unit("m")
-    assert mfp.shape == shape
+    assert mfp.shape == shape[:-1]  # per-column, not per-voxel
     expected_mfp = (
-        np.inf if expected["sigma_t"] == 0.0 else 1.0 / expected["sigma_t"] * 1000.0
+        np.inf if expected["sigma_s"] == 0.0 else 1.0 / expected["sigma_s"] * 1000.0
     )
     np.testing.assert_allclose(mfp.m_as("m"), expected_mfp)
 
@@ -322,26 +355,23 @@ def test_eval_family_no_absorption_no_scattering():
     with pytest.raises(RuntimeError, match="At least one"):
         pf.eval_albedo(si)
     with pytest.raises(RuntimeError, match="At least one"):
-        pf.eval_mfp(si)
+        pf.eval_mfp(KernelContext(si=si))
 
     np.testing.assert_allclose(pf.eval_sigma_s(si).m_as("1/km"), 0.0)
     np.testing.assert_allclose(pf.eval_sigma_a(si).m_as("1/km"), 0.0)
 
 
-def test_eval_sigma_t_and_mfp_outside_cloud():
-    """Voxels outside the profile's z-extent get zero sigma_t and infinite mfp."""
+def test_eval_sigma_t_outside_cloud():
+    """Voxels outside the profile's z-extent get zero sigma_t."""
     pf, target_grid = _make_z_profile_particle_field(
         [0.0, 1.0, 2.0, 3.0, 4.0, 5.0], np.arange(-1.0, 6.1, 1.0)
     )
     si = MonoSpectralIndex(w=ureg.Quantity(1.0, "micron"))
 
     sigma_t = pf.eval_sigma_t(si, target_grid).m_as("1/km").ravel()
-    mfp = pf.eval_mfp(si, target_grid).m_as("m").ravel()
 
     np.testing.assert_allclose(sigma_t[[0, -1]], 0.0)
     assert np.all(sigma_t[1:-1] > 0.0)
-    assert np.all(np.isinf(mfp[[0, -1]]))
-    assert np.all(np.isfinite(mfp[1:-1]))
 
 
 def test_reff_veff_interpolation_and_clipping():
@@ -710,7 +740,7 @@ def test_theta_convention_consistency(mode_mono):
     geometry = PlaneParallelGeometry(grid=grid, toa_altitude=grid.levels[-1])
     profile = make_profile_dataset(grid, reff=10.0, veff=0.1, mass_concentration=1e-3)
 
-    properties = make_aer_core_v2(
+    properties = make_prt_cloud_v1(
         w=np.array([1.0]) * ureg.micron,
         phamat=PHAMAT_LABELS[4],
         mu=ureg.Quantity(
@@ -777,7 +807,7 @@ def test_multi_reff_veff_ws(mode_mono):
     ssa[:, :, 0] = 0.6
     ssa[:, :, 1] = 0.9
 
-    properties = make_aer_core_v2(
+    properties = make_prt_cloud_v1(
         w=w_nodes * ureg.micron,
         phamat=PHAMAT_LABELS[4],
         mu=mu * ureg.dimensionless,

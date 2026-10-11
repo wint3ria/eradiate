@@ -11,6 +11,7 @@ from eradiate.radprops import ParticleProperties
 from eradiate.scenes.atmosphere import (
     ArrayParticleDistribution,
     ParticleAOTComponent,
+    ParticleComponent,
     UniformParticleDistribution,
 )
 from eradiate.scenes.core import traverse
@@ -84,6 +85,25 @@ class TestParticleAOTComponent:
         assert (
             ParticleAOTComponent()
         )  # should pick up the default dataset from shipped assets
+
+    def test_convert_passthrough(self):
+        """ParticleComponent.convert returns an existing instance unchanged."""
+        component = ParticleAOTComponent()
+        assert ParticleAOTComponent.convert(component) is component
+        assert ParticleComponent.convert(component) is component
+
+    def test_convert_from_dict_defaults_to_particle_aot(self):
+        """
+        Called on the abstract ParticleComponent base, a dict without 'type'
+        defaults to 'particle_aot' and is routed through atmosphere_factory.
+        """
+        result = ParticleComponent.convert({})
+        assert isinstance(result, ParticleAOTComponent)
+
+    def test_convert_rejects_wrong_type(self):
+        """A value that is neither a dict nor a ParticleComponent instance is rejected."""
+        with pytest.raises(TypeError):
+            ParticleComponent.convert(object())
 
     def test_construct_attrs(self, particle_properties_test):
         """Assigns parameters to expected values."""

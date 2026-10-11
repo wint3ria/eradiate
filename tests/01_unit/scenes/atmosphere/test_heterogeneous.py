@@ -6,7 +6,7 @@ import eradiate
 from eradiate import unit_context_config as ucc
 from eradiate import unit_registry as ureg
 from eradiate.contexts import KernelContext
-from eradiate.grid import PlaneParallelGridCoords
+from eradiate.grid import CartesianGrid
 from eradiate.scenes.atmosphere import (
     HeterogeneousAtmosphere,
     ParticleAOTComponent,
@@ -40,6 +40,19 @@ def test_heterogeneous_empty(modes_all_double):
     # Passing no component is not allowed
     with pytest.raises(ValueError):
         HeterogeneousAtmosphere()
+
+
+def test_particle_field_dict_interface():
+    """
+    particle_field= accepts a dict, interpreted by atmosphere_factory with
+    the 'type' parameter defaulting to 'particle_field' -- confirmed via the
+    expected missing-required-argument error for an incomplete dict (not a
+    routing/type-lookup error).
+    """
+    with pytest.raises(TypeError, match="missing 2 required keyword-only arguments"):
+        HeterogeneousAtmosphere(
+            particle_components=ParticleAOTComponent(), particle_field={}
+        )
 
 
 @pytest.mark.parametrize("geometry", ["plane_parallel", "spherical_shell"])
@@ -505,13 +518,13 @@ def test_heterogeneous_medium_type_genuine_3d_grid(
     A non-onedim horizontal grid forces the eoheterogeneous medium type even
     with force_majorant left at its default (False).
     """
-    grid = PlaneParallelGridCoords(
+    grid = CartesianGrid(
         edges_x=np.array([-1.0, 0.0, 1.0]) * ureg.km,
         edges_y=np.array([-1.0, 0.0, 1.0]) * ureg.km,
         levels=np.linspace(0.0, 10.0, 6) * ureg.km,
     )
     geometry = PlaneParallelGeometry(grid=grid, toa_altitude=grid.levels[-1])
-    assert not geometry.grid.onedim
+    assert not geometry.grid.is_1d
 
     atmosphere = HeterogeneousAtmosphere(
         geometry=geometry,

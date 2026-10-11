@@ -350,17 +350,23 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         -------
         :class:`pint.Quantity`
             Absorption coefficient array of shape
-            ``(n_cells_x, n_cells_y, n_cells_z)``, dimensionless
+            ``(n_cells_x, n_cells_y, n_cells_z)``, in units of
+            :math:`\\mathrm{km}^{-1}`.
         """
         grid = grid or self.geometry.grid
         if not self.has_absorption:
-            return ureg.Quantity(np.zeros(grid.shape, dtype=np.float64), ureg.dimensionless)
+            units = uck.get("collision_coefficient")
+            return ureg.Quantity(np.zeros(grid.shape, dtype=np.float64), units)
         return self.eval_sigma_t(si, grid) * (
             1.0 - self.eval_albedo(si, grid).m_as(ureg.dimensionless)
         )
 
     def eval_mfp(self, ctx: KernelContext) -> ureg.Quantity:
         # Inherit docstring
+        if not (self.has_absorption or self.has_scattering):
+            raise RuntimeError(
+                "At least one of 'has_absorption' or 'has_scattering' must be True."
+            )
         min_sigma_s = self.eval_sigma_s(ctx.si).min(axis=-1)
         with np.errstate(divide="ignore"):
             return 1.0 / min_sigma_s
