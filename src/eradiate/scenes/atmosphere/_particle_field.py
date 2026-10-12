@@ -2,8 +2,8 @@
 Particle fields.
 
 A particle field is an atmospheric medium whose optical properties vary
-spatially, described by a sparse volumetric :class:`.ParticleProfile`
-(voxel-indexed microphysical properties) and a Prt v1 particle properties
+spatially, described by a dense volumetric :class:`.ParticleProfile`
+(per-voxel microphysical properties) and a Prt v1 particle properties
 lookup dataset (wrapped in a :class:`.ParticleProperties`).
 """
 
@@ -47,9 +47,10 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
     Atmospheric medium representing a particle field with spatially heterogeneous
     physical properties.
 
-    The particle field is defined by a sparse volumetric *profile* (voxel-indexed
-    microphysical properties, in the :ref:`Ppr v1 <sec-data-formats-ppr_v1>`
-    format) and a Prt v1 particle properties dataset.
+    The particle field is defined by a dense volumetric *profile* (per-voxel
+    microphysical properties, in the :ref:`Pfd-Core v1 <sec-data-formats-pfd_core_v1>`
+    format) and particle properties (in the
+    :ref:`Prt v1 <sec-data-formats-prt_v1>` format).
 
     When evaluated, the profile is resampled onto the render grid.
     Extinction and albedo are interpolated per voxel in Python; the phase
@@ -80,8 +81,8 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
 
     profile: ParticleProfile = documented(
         attrs.field(kw_only=True, converter=ParticleProfile.convert),
-        doc="Sparse volumetric cloud profile, in the "
-        ":ref:`Ppr v1 <sec-data-formats-ppr_v1>` format. "
+        doc="Dense volumetric cloud profile, in the "
+        ":ref:`Pfd-Core v1 <sec-data-formats-pfd_core_v1>` format. "
         "This parameter has no default.",
         type="ParticleProfile",
         init_type="ParticleProfile or Dataset or path-like",
@@ -197,20 +198,12 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         resampled = self.profile.resample_regular(grid)
         ext_grid, _ = self._eval_ext_ssa_grid(si)
 
-        ix = resampled.data["i_x"].values
-        iy = resampled.data["i_y"].values
-        iz = resampled.data["i_z"].values
-
+        mass_concentration = to_quantity(resampled.data["mass_concentration"])
         m_extinction = resampled.interp_reff_veff(ext_grid)
-        extinction = (
-            to_quantity(m_extinction)
-            * to_quantity(resampled.data["mass_concentration"])
-        ).to(col_units)
+        extinction = (to_quantity(m_extinction) * mass_concentration).to(col_units)
 
-        sigma_t_values = np.zeros(
-            (grid.n_cells_x, grid.n_cells_y, grid.n_cells_z), dtype=np.float64
-        )
-        sigma_t_values[ix, iy, iz] = extinction.m
+        extinction_values = np.where(mass_concentration.m > 0, extinction.m, 0.0)
+        sigma_t_values = np.transpose(extinction_values, (2, 1, 0))  # (z,y,x)->(x,y,z)
         return ureg.Quantity(sigma_t_values, col_units)
 
     def eval_albedo(
@@ -244,16 +237,13 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             resampled = self.profile.resample_regular(grid)
             _, ssa_grid = self._eval_ext_ssa_grid(si)
 
-            ix = resampled.data["i_x"].values
-            iy = resampled.data["i_y"].values
-            iz = resampled.data["i_z"].values
-
+            mass_concentration = to_quantity(resampled.data["mass_concentration"])
             albedo_da = resampled.interp_reff_veff(ssa_grid)
-
-            albedo_values = np.zeros(
-                (grid.n_cells_x, grid.n_cells_y, grid.n_cells_z), dtype=np.float64
+            albedo_m = np.where(
+                mass_concentration.m > 0, to_quantity(albedo_da).m, 0.0
             )
-            albedo_values[ix, iy, iz] = to_quantity(albedo_da).m
+
+            albedo_values = np.transpose(albedo_m, (2, 1, 0))  # (z,y,x)->(x,y,z)
             return ureg.Quantity(albedo_values, ureg.dimensionless)
 
         if self.has_absorption:
@@ -427,50 +417,60 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
     # --------------------------------------------------------------------------
 
     @classmethod
-    def to_particle_ensemble_from_profile_point(
+    def to_particle_aot_component(
         cls,
         particle_field: ParticleField,
-        profile_point: xr.Dataset,
         w: ureg.Quantity,
+        ix: int,
+        iy: int,
+        iz: int,
         grid: SpatialGrid | None = None,
     ) -> ParticleAOTComponent:
         """
-        Build a :class:`.ParticleAOTComponent` from a single profile point.
+        Build a :class:`.ParticleAOTComponent` representing a single voxel of
+        the particle field at the given grid location.
 
         Parameters
         ----------
         particle_field : :class:`.ParticleField`
             Source particle field.
-        
-        profile_point : xr.Dataset
-            A single-point subset of a resampled profile dataset, e.g.
-            obtained via
-            ``particle_field.profile.resample_regular(...).data.sel(index=0)``.
-            Must contain exactly one point along the ``index`` dimension.
-        
+
         w : :class:`pint.Quantity`
             Evaluation wavelength.
-        
+
+        ix, iy, iz : int
+            Voxel indices in the render grid.
+
         grid : :class:`.SpatialGrid`, optional
             Target render grid. Defaults to ``particle_field.geometry.grid``.
 
         Returns
         -------
         :class:`.ParticleAOTComponent`
-        """
-        if profile_point.sizes.get("index", 1) != 1:
-            raise ValueError(
-                "profile_point must contain exactly one point along the 'index' dimension."
-            )
 
+        Raises
+        ------
+        ValueError
+            If ``(ix, iy, iz)`` is out of bounds, or the voxel there has no
+            cloud (zero ``mass_concentration``).
+        """
         grid = grid or particle_field.geometry.grid
+        resampled_profile = particle_field.profile.resample_regular(grid).data
+
+        sizes = resampled_profile.sizes
+        in_bounds = 0 <= ix < sizes["x"] and 0 <= iy < sizes["y"] and 0 <= iz < sizes["z"]
+        has_cloud = in_bounds and float(
+            resampled_profile["mass_concentration"].values[iz, iy, ix]
+        ) > 0.0
+        if not has_cloud:
+            raise ValueError(f"No cloud voxel found at ({ix}, {iy}, {iz}).")
+
+        profile_point = resampled_profile.isel(x=ix, y=iy, z=iz)
+
         col_units = uck.get("collision_coefficient")
         wavelength = np.atleast_1d(w)
         pp = particle_field.properties
 
-        ix = int(profile_point["i_x"].values.item())
-        iy = int(profile_point["i_y"].values.item())
-        iz = int(profile_point["i_z"].values.item())
         reff_qty = to_quantity(profile_point["reff"]).item()
         veff_qty = to_quantity(profile_point["veff"]).item()
         mass_concentration_quantity = to_quantity(
@@ -543,58 +543,6 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         )
 
     @classmethod
-    def to_particle_ensemble(
-        cls,
-        particle_field: ParticleField,
-        w: ureg.Quantity,
-        ix: int,
-        iy: int,
-        iz: int,
-        grid: SpatialGrid | None = None,
-    ) -> ParticleAOTComponent:
-        """
-        Build a :class:`.ParticleAOTComponent` representing a single voxel of the
-        particle field at the given grid location.
-
-        Parameters
-        ----------
-        
-        particle_field : :class:`.ParticleField`
-            Source particle field.
-        
-        w : :class:`pint.Quantity`
-            Evaluation wavelength.
-        
-        ix, iy, iz : int
-            Voxel indices in the render grid.
-        
-        grid : :class:`.SpatialGrid`, optional
-            Target render grid. Defaults to ``particle_field.geometry.grid``.
-
-        Returns
-        -------
-        :class:`.ParticleAOTComponent`
-        """
-        grid = grid or particle_field.geometry.grid
-
-        resampled_profile = particle_field.profile.resample_regular(grid).data
-
-        voxel_mask = (
-            (resampled_profile["i_x"].values == ix)
-            & (resampled_profile["i_y"].values == iy)
-            & (resampled_profile["i_z"].values == iz)
-        )
-        if not np.any(voxel_mask):
-            raise ValueError(f"No cloud voxel found at ({ix}, {iy}, {iz}).")
-
-        index = int(np.where(voxel_mask)[0][0])
-        profile_point = resampled_profile.isel(index=index)
-
-        return cls.to_particle_ensemble_from_profile_point(
-            particle_field, profile_point, w, grid
-        )
-
-    @classmethod
     def to_particle_ensemble_fixed_composition(
         cls,
         particle_field: ParticleField,
@@ -649,15 +597,9 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
 
         resampled = particle_field.profile.resample_regular(grid)
         mass_concentration = to_quantity(resampled.data["mass_concentration"])
-        sigma_t = m_extinction * mass_concentration
+        sigma_t = m_extinction * mass_concentration  # (z, y, x)
 
-        ix = resampled.data["i_x"].values
-        iy = resampled.data["i_y"].values
-        iz = resampled.data["i_z"].values
-        sigma_t_grid = np.zeros(
-            (grid.n_cells_x, grid.n_cells_y, grid.n_cells_z), dtype=np.float64
-        )
-        sigma_t_grid[ix, iy, iz] = sigma_t.m_as(col_units)
+        sigma_t_grid = np.transpose(sigma_t.m_as(col_units), (2, 1, 0))  # ->(x,y,z)
 
         layer_height = np.diff(grid.levels.m_as(ureg.km))
         tau_per_voxel = sigma_t_grid * layer_height[np.newaxis, np.newaxis, :]
@@ -755,44 +697,37 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             str(mass_concentration.units)
         )
 
-        valid_mask = mass_concentration_grid.m > 0
-        ix_arr, iy_arr, iz_arr = np.where(valid_mask)
+        # (x, y, z) -> (z, y, x)
+        mass_concentration_zyx = np.transpose(mass_concentration_grid.m, (2, 1, 0))
+        reff_zyx = np.full_like(mass_concentration_zyx, reff.m_as(ureg.micron))
+        veff_zyx = np.full_like(
+            mass_concentration_zyx, veff.m_as(ureg.dimensionless)
+        )
 
         level_units = {"units": "kilometer"}
         profile_ds = xr.Dataset(
             data_vars={
-                "i_x": (["index"], ix_arr),
-                "i_y": (["index"], iy_arr),
-                "i_z": (["index"], iz_arr),
-                "reff": (
-                    ["index"],
-                    np.full(len(ix_arr), reff.m_as(ureg.micron)),
-                    {"units": "micron"},
-                ),
-                "veff": (
-                    ["index"],
-                    np.full(len(ix_arr), veff.m_as(ureg.dimensionless)),
-                    {"units": "dimensionless"},
-                ),
+                "reff": (["z", "y", "x"], reff_zyx, {"units": "micron"}),
+                "veff": (["z", "y", "x"], veff_zyx, {"units": "dimensionless"}),
                 "mass_concentration": (
-                    ["index"],
-                    mass_concentration_grid.m[ix_arr, iy_arr, iz_arr],
+                    ["z", "y", "x"],
+                    mass_concentration_zyx,
                     {"units": str(mass_concentration_grid.units)},
                 ),
             },
             coords={
                 "x_levels": (
-                    ["x"],
+                    ["x_levels"],
                     target_grid.edges_x.m_as(ureg.kilometer),
                     level_units,
                 ),
                 "y_levels": (
-                    ["y"],
+                    ["y_levels"],
                     target_grid.edges_y.m_as(ureg.kilometer),
                     level_units,
                 ),
                 "z_levels": (
-                    ["z"],
+                    ["z_levels"],
                     target_grid.levels.m_as(ureg.kilometer),
                     level_units,
                 ),
