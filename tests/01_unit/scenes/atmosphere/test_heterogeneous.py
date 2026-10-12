@@ -42,16 +42,11 @@ def test_heterogeneous_empty(modes_all_double):
         HeterogeneousAtmosphere()
 
 
-def test_particle_field_dict_interface():
-    """
-    particle_field= accepts a dict, interpreted by atmosphere_factory with
-    the 'type' parameter defaulting to 'particle_field' -- confirmed via the
-    expected missing-required-argument error for an incomplete dict (not a
-    routing/type-lookup error).
-    """
+def test_particle_psd_component_dict_interface():
+    """particle_psd_component= accepts a dict, routed through atmosphere_factory."""
     with pytest.raises(TypeError, match="missing 2 required keyword-only arguments"):
         HeterogeneousAtmosphere(
-            particle_components=ParticleAOTComponent(), particle_field={}
+            particle_components=ParticleAOTComponent(), particle_psd_component={}
         )
 
 

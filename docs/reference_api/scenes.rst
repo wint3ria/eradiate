@@ -175,7 +175,7 @@ Quick access
    MolecularAtmosphere
    ParticleAOTComponent
    PartilceExtinctionComponent
-   ParticleField
+   ParticlePSDComponent
 
 **Particle distributions**
 
@@ -486,7 +486,7 @@ Quick access
    HenyeyGreensteinPhaseFunction
    MultiPhaseFunction
    ParticlePhaseFunction
-   ParticleFieldPhaseFunction
+   GriddedParticlePhaseFunction
 
 .. _module-eradiate.scenes.integrators:
 

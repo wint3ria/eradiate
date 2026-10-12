@@ -16,7 +16,7 @@ from axsdb import AbsorptionDatabase
 from ._core import AbstractHeterogeneousAtmosphere, atmosphere_factory
 from ._molecular import MolecularAtmosphere
 from ._particle_component import ParticleComponent
-from ._particle_field import ParticleField
+from ._particle_psd_component import ParticlePSDComponent
 from ..core import traverse
 from ..phase import MultiPhaseFunction, PhaseFunction
 from ...attrs import define, documented
@@ -106,19 +106,19 @@ class HeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
                 "scaled individually"
             )
 
-    particle_field: ParticleField | None = documented(
+    particle_psd_component: ParticlePSDComponent | None = documented(
         attrs.field(
             default=None,
-            converter=attrs.converters.optional(ParticleField.convert),
+            converter=attrs.converters.optional(ParticlePSDComponent.convert),
             kw_only=True,
         ),
-        doc="Optional particle field component providing spatially "
+        doc="Optional particle PSD component providing spatially "
         "heterogeneous cloud optical properties with trilinear interpolation. "
         "May be specified as a dictionary interpreted by "
         ":data:`.atmosphere_factory`; in that case, the ``type`` parameter "
-        'may be omitted and will automatically be set to ``"particle_field"``.',
-        type=".ParticleField or None",
-        init_type=".ParticleField or dict or None, optional",
+        'may be omitted and will automatically be set to ``"particle_psd"``.',
+        type=".ParticlePSDComponent or None",
+        init_type=".ParticlePSDComponent or dict or None, optional",
         default="None",
     )
 
@@ -134,17 +134,17 @@ class HeterogeneousAtmosphere(AbstractHeterogeneousAtmosphere):
     @property
     def components(
         self,
-    ) -> list[MolecularAtmosphere | ParticleComponent | ParticleField]:
+    ) -> list[MolecularAtmosphere | ParticleComponent | ParticlePSDComponent]:
         """
         Returns
         -------
-        list of .MolecularAtmosphere or .ParticleComponent or .ParticleField
+        list of .MolecularAtmosphere or .ParticleComponent or .ParticlePSDComponent
             The list of all registered atmospheric components.
         """
         result = [self.molecular_atmosphere] if self.molecular_atmosphere else []
         result.extend(self.particle_components)
-        if self.particle_field is not None:
-            result.append(self.particle_field)
+        if self.particle_psd_component is not None:
+            result.append(self.particle_psd_component)
         return result
 
     def update(self):

@@ -1,8 +1,8 @@
 """
-Particle fields.
+Particle PSD components.
 
-A particle field is an atmospheric medium whose optical properties vary
-spatially, described by a dense volumetric :class:`.ParticleProfile`
+A particle PSD component is an atmospheric medium whose optical properties
+vary spatially, described by a dense volumetric :class:`.ParticleProfile`
 (per-voxel microphysical properties) and a Prt v1 particle properties
 lookup dataset (wrapped in a :class:`.ParticleProperties`).
 """
@@ -22,7 +22,7 @@ from ._particle_component import ParticleAOTComponent
 from ._particle_profile import ParticleProfile
 from ..core import traverse
 from ..geometry import PlaneParallelGeometry
-from ..phase import ParticleFieldPhaseFunction
+from ..phase import GriddedParticlePhaseFunction
 from ...attrs import define, documented
 from ...data.convert import make_prt_cloud_v1
 from ...grid import SpatialGrid, CartesianGrid
@@ -35,27 +35,22 @@ from ...units import unit_registry as ureg
 from ...units import unit_context_kernel as uck
 from ...util.misc import cache_by_id
 
-PHAMAT_LABELS = {
-    4: ["11", "12", "33", "34"],
-    6: ["11", "12", "22", "33", "34", "44"],
-}
-
 
 @define(eq=False, slots=False)
-class ParticleField(AbstractHeterogeneousAtmosphere):
+class ParticlePSDComponent(AbstractHeterogeneousAtmosphere):
     """
-    Atmospheric medium representing a particle field with spatially heterogeneous
-    physical properties.
+    Atmospheric medium representing a particle PSD component with spatially
+    heterogeneous physical properties.
 
-    The particle field is defined by a dense volumetric *profile* (per-voxel
-    microphysical properties, in the :ref:`Pfd-Core v1 <sec-data-formats-pfd_core_v1>`
-    format) and particle properties (in the
-    :ref:`Prt v1 <sec-data-formats-prt_v1>` format).
+    The particle PSD component is defined by a dense volumetric *profile*
+    (per-voxel microphysical properties, in the
+    :ref:`Pfd-Core v1 <sec-data-formats-pfd_core_v1>` format) and particle
+    properties (in the :ref:`Prt v1 <sec-data-formats-prt_v1>` format).
 
     When evaluated, the profile is resampled onto the render grid.
     Extinction and albedo are interpolated per voxel in Python; the phase
     function is interpolated per voxel by the
-    :class:`.ParticleFieldPhaseFunction` kernel plugin at render time.
+    :class:`.GriddedParticlePhaseFunction` kernel plugin at render time.
 
     Notes
     -----
@@ -65,18 +60,18 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
     """
 
     @classmethod
-    def convert(cls, value: Any) -> ParticleField:
+    def convert(cls, value: Any) -> ParticlePSDComponent:
         """
         Conversion logic:
 
-        * If value is a ParticleField instance, return it unchanged.
+        * If value is a ParticlePSDComponent instance, return it unchanged.
         * If value is a dictionary, it is interpreted by
           :data:`.atmosphere_factory`; the ``"type"`` parameter may be
-          omitted and will automatically be set to ``"particle_field"``.
+          omitted and will automatically be set to ``"particle_psd"``.
         * Otherwise, the value is returned unchanged.
         """
         if isinstance(value, cabc.MutableMapping) and "type" not in value:
-            value = {**value, "type": "particle_field"}
+            value = {**value, "type": "particle_psd"}
         return atmosphere_factory.convert(value, allowed_cls=cls)
 
     profile: ParticleProfile = documented(
@@ -101,7 +96,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
     def _properties_validator(self, attribute, value):
         if not value.has_size_distribution:
             raise ValueError(
-                "While initialising ParticleField: 'properties' must have "
+                "While initialising ParticlePSDComponent: 'properties' must have "
                 "'reff'/'veff' dimensions (a Prt v1 dataset)"
             )
 
@@ -121,7 +116,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         default="True",
     )
 
-    _phase: ParticleFieldPhaseFunction = None
+    _phase: GriddedParticlePhaseFunction = None
 
     # --------------------------------------------------------------------------
     #                       Profile and properties access
@@ -326,7 +321,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
     @cache_by_id
     def _eval_phase_data(self, si: SpectralIndex) -> dict:
         """
-        Build the dict expected by :class:`.ParticleFieldPhaseFunction`'s
+        Build the dict expected by :class:`.GriddedParticlePhaseFunction`'s
         ``phase_data`` callable: ``mu``/``phase`` flattened to one row per
         ``(reff, veff)`` pair, combined with :meth:`_eval_ext_ssa_grid`.
         """
@@ -346,7 +341,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         }
 
     @property
-    def phase(self) -> ParticleFieldPhaseFunction:
+    def phase(self) -> GriddedParticlePhaseFunction:
         if self._phase:
             return self._phase
 
@@ -355,7 +350,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             grid
         ).to_reff_veff_volumes()
         pp = self.properties
-        return ParticleFieldPhaseFunction(
+        return GriddedParticlePhaseFunction(
             geometry=self.geometry,
             r_eff_volume=lambda ctx: reff_volume,
             v_eff_volume=lambda ctx: veff_volume,
@@ -403,7 +398,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
 
     def to_profile_regular_grid(self):
         """
-        Return a copy of this :class:`ParticleField` with its geometry set to
+        Return a copy of this :class:`ParticlePSDComponent` with its geometry set to
         a regular grid aligned with the profile.
         """
         grid = self._profile_regular_grid()
@@ -419,9 +414,9 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
     # --------------------------------------------------------------------------
 
     @classmethod
-    def to_particle_aot_component(
+    def voxel_to_particle_aot(
         cls,
-        particle_field: ParticleField,
+        particle_psd_component: ParticlePSDComponent,
         w: ureg.Quantity,
         ix: int,
         iy: int,
@@ -430,12 +425,12 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
     ) -> ParticleAOTComponent:
         """
         Build a :class:`.ParticleAOTComponent` representing a single voxel of
-        the particle field at the given grid location.
+        the particle PSD component at the given grid location.
 
         Parameters
         ----------
-        particle_field : :class:`.ParticleField`
-            Source particle field.
+        particle_psd_component : :class:`.ParticlePSDComponent`
+            Source particle PSD component.
 
         w : :class:`pint.Quantity`
             Evaluation wavelength.
@@ -444,7 +439,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             Voxel indices in the render grid.
 
         grid : :class:`.SpatialGrid`, optional
-            Target render grid. Defaults to ``particle_field.geometry.grid``.
+            Target render grid. Defaults to ``particle_psd_component.geometry.grid``.
 
         Returns
         -------
@@ -456,8 +451,8 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             If ``(ix, iy, iz)`` is out of bounds, or the voxel there has no
             cloud (zero ``mass_concentration``).
         """
-        grid = grid or particle_field.geometry.grid
-        resampled_profile = particle_field.profile.resample_regular(grid).data
+        grid = grid or particle_psd_component.geometry.grid
+        resampled_profile = particle_psd_component.profile.resample_regular(grid).data
 
         sizes = resampled_profile.sizes
         in_bounds = 0 <= ix < sizes["x"] and 0 <= iy < sizes["y"] and 0 <= iz < sizes["z"]
@@ -471,7 +466,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
 
         col_units = uck.get("collision_coefficient")
         wavelength = np.atleast_1d(w)
-        pp = particle_field.properties
+        pp = particle_psd_component.properties
 
         reff_qty = to_quantity(profile_point["reff"]).item()
         veff_qty = to_quantity(profile_point["veff"]).item()
@@ -541,13 +536,13 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             w_ref=wavelength[0],
             tau_ref=tau_ref,
             particle_properties=phase_ds,
-            geometry=particle_field.geometry,
+            geometry=particle_psd_component.geometry,
         )
 
     @classmethod
-    def to_particle_ensemble_fixed_composition(
+    def composition_to_particle_aot(
         cls,
-        particle_field: ParticleField,
+        particle_psd_component: ParticlePSDComponent,
         w: ureg.Quantity,
         i_reff: int,
         i_veff: int,
@@ -556,7 +551,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
     ) -> ParticleAOTComponent:
         """
         Build a single :class:`.ParticleAOTComponent` approximating the whole
-        field with one fixed ``(reff, veff)`` grid point.
+        component with one fixed ``(reff, veff)`` grid point.
 
         Every voxel's own ``reff``/``veff`` is ignored in favour of the
         given grid point; only its ``mass_concentration`` is used to build
@@ -564,41 +559,40 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
 
         Parameters
         ----------
-        particle_field : :class:`.ParticleField`
-            Source particle field.
+        particle_psd_component : :class:`.ParticlePSDComponent`
+            Source particle PSD component.
 
         w : :class:`pint.Quantity`
             Evaluation wavelength.
 
         i_reff, i_veff : int
-            Index along ``particle_field.properties``'s ``reff``/``veff``
-            dimensions, assumed constant across the whole field.
+            Index along ``particle_psd_component.properties``'s ``reff``/``veff``
+            dimensions, assumed constant across the whole component.
 
         grid : :class:`.SpatialGrid`, optional
-            Target render grid. Defaults to ``particle_field.geometry.grid``.
+            Target render grid. Defaults to ``particle_psd_component.geometry.grid``.
 
         ext : :class:`pint.Quantity`, optional
-            Extinction coefficient stored in the output ensemble's
+            Extinction coefficient stored in the output ParticleAOTComponent's
             ``particle_properties``. Defaults to the native grid value at
             ``(i_reff, i_veff)``. Since that dataset only ever has one
             wavelength point, this value is only ever compared to itself
-            (``ext(w) / ext(w_ref)``) and has no effect on the ensemble's
-            radiative properties; overriding it is rarely needed.
+            (``ext(w) / ext(w_ref)``) and has no effect on the output.
 
         Returns
         -------
         :class:`.ParticleAOTComponent`
         """
-        grid = grid or particle_field.geometry.grid
+        grid = grid or particle_psd_component.geometry.grid
         col_units = uck.get("collision_coefficient")
         length_units = uck.get("length")
         wavelength = np.atleast_1d(w)
-        pp = particle_field.properties
+        pp = particle_psd_component.properties
 
         # Evaluate on the wavelength axis first, then pick this exact point.
         m_extinction = pp.eval_ext(wavelength)[0, i_reff, i_veff]
 
-        resampled = particle_field.profile.resample_regular(grid)
+        resampled = particle_psd_component.profile.resample_regular(grid)
         mass_concentration = to_quantity(resampled.data["mass_concentration"])
         sigma_t = m_extinction * mass_concentration  # (z, y, x)
 
@@ -619,9 +613,9 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         phase_ds = pp.phase_dataset_for_reff_veff(wavelength[0], i_reff, i_veff, ext)
 
         geometry = (
-            particle_field.geometry
-            if grid is particle_field.geometry.grid
-            else attrs.evolve(particle_field.geometry, grid=grid)
+            particle_psd_component.geometry
+            if grid is particle_psd_component.geometry.grid
+            else attrs.evolve(particle_psd_component.geometry, grid=grid)
         )
 
         return ParticleAOTComponent(
@@ -632,26 +626,26 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             tau_ref=tau_ref,
             particle_properties=phase_ds,
             geometry=geometry,
-            has_absorption=particle_field.has_absorption,
-            has_scattering=particle_field.has_scattering,
+            has_absorption=particle_psd_component.has_absorption,
+            has_scattering=particle_psd_component.has_scattering,
         )
 
     @classmethod
-    def from_particle_ensemble(
+    def from_particle_aot(
         cls,
-        particle_ensemble: ParticleAOTComponent,
+        particle_aot: ParticleAOTComponent,
         mass_concentration: ureg.Quantity,
         reff: ureg.Quantity,
         veff: ureg.Quantity,
         grid: SpatialGrid | None = None,
-    ) -> ParticleField:
+    ) -> ParticlePSDComponent:
         """
-        Build a :class:`.ParticleField` from a :class:`.ParticleAOTComponent`.
+        Build a :class:`.ParticlePSDComponent` from a :class:`.ParticleAOTComponent`.
 
         Parameters
         ----------
-        particle_ensemble : :class:`.ParticleAOTComponent`
-            Source particle ensemble.
+        particle_aot: :class:`.ParticleAOTComponent`
+            Source particle aot.
 
         mass_concentration : :class:`pint.Quantity`
             Mass concentration used to derive the mass extinction coefficient.
@@ -663,22 +657,22 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             Effective variance (dimensionless) of the particle species.
 
         grid : :class:`.SpatialGrid`, optional
-            Target render grid for the output :class:`.ParticleField`.
-            If provided, ``particle_ensemble``'s radiative properties are
+            Target render grid for the output :class:`.ParticlePSDComponent`.
+            If provided, ``particle_aot``'s radiative properties are
             evaluated on it instead of its own geometry's grid.
 
         Returns
         -------
-        :class:`.ParticleField`
+        :class:`.ParticlePSDComponent`
         """
         output_geometry = (
-            particle_ensemble.geometry
+            particle_aot.geometry
             if grid is None
-            else attrs.evolve(particle_ensemble.geometry, grid=grid)
+            else attrs.evolve(particle_aot.geometry, grid=grid)
         )
         target_grid = output_geometry.grid
-        w_ref = particle_ensemble.w_ref
-        pp = particle_ensemble.particle_properties
+        w_ref = particle_aot.w_ref
+        pp = particle_aot.particle_properties
 
         sigma_t_at_wref = pp.eval_ext(w_ref).item()
         albedo_at_wref = pp.eval_ssa(w_ref).item()
@@ -688,7 +682,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         )
 
         si_ref = MonoSpectralIndex(w=w_ref)
-        sigma_t_grid = particle_ensemble.eval_sigma_t(si_ref, target_grid)
+        sigma_t_grid = particle_aot.eval_sigma_t(si_ref, target_grid)
         sigma_t_grid = ureg.Quantity(
             np.broadcast_to(
                 sigma_t_grid.m,
@@ -775,6 +769,6 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
             profile=profile_ds,
             properties=properties,
             geometry=output_geometry,
-            has_absorption=particle_ensemble.has_absorption,
-            has_scattering=particle_ensemble.has_scattering,
+            has_absorption=particle_aot.has_absorption,
+            has_scattering=particle_aot.has_scattering,
         )

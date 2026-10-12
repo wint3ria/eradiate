@@ -30,9 +30,9 @@ def _validate_increasing_grid_axis(instance, attribute, value):
 
 
 @define(eq=False, slots=False)
-class ParticleFieldPhaseFunction(PhaseFunction):
+class GriddedParticlePhaseFunction(PhaseFunction):
     """
-    Phase function for spatially heterogeneous cloud particle fields.
+    Phase function for spatially heterogeneous cloud particle PSD components.
 
     Wraps the ``particlefieldphase`` kernel plugin, which performs bilinear
     interpolation of the phase matrix in the ``(r_eff, v_eff)`` parameter

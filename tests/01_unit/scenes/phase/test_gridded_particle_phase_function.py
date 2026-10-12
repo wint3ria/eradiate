@@ -7,7 +7,7 @@ from eradiate import unit_registry as ureg
 from eradiate.grid import PlaneParallelGridCoords
 from eradiate.scenes.core import traverse
 from eradiate.scenes.geometry import PlaneParallelGeometry
-from eradiate.scenes.phase import ParticleFieldPhaseFunction
+from eradiate.scenes.phase import GriddedParticlePhaseFunction
 from eradiate.spectral.index import MonoSpectralIndex
 from eradiate.test_tools.types import check_scene_element
 
@@ -40,7 +40,7 @@ def make_phase_data():
 
 
 def make_particle_phase(r_eff_volume=None, v_eff_volume=None, **kwargs):
-    """Build a minimal 2-reff by 1-veff :class:`.ParticleFieldPhaseFunction`."""
+    """Build a minimal 2-reff by 1-veff :class:`.GriddedParticlePhaseFunction`."""
     # n_cells_x != n_cells_z on purpose: r_eff_volume/v_eff_volume must be
     # shaped (n_cells_x, n_cells_y, n_cells_z), matching GridCoords.shape.
     # With n_cells_x == n_cells_z (as a 1x1xN grid would give), a wrongly
@@ -67,7 +67,7 @@ def make_particle_phase(r_eff_volume=None, v_eff_volume=None, **kwargs):
     kwargs.setdefault("r_eff_grid", ureg.Quantity(np.array([10.0, 20.0]), "micron"))
     kwargs.setdefault("v_eff_grid", ureg.Quantity(np.array([0.1]), "dimensionless"))
 
-    return ParticleFieldPhaseFunction(
+    return GriddedParticlePhaseFunction(
         geometry=geometry,
         r_eff_volume=lambda ctx: r_eff_volume,
         v_eff_volume=lambda ctx: v_eff_volume,
