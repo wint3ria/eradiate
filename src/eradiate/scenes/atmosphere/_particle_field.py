@@ -24,7 +24,7 @@ from ..core import traverse
 from ..geometry import PlaneParallelGeometry
 from ..phase import ParticleFieldPhaseFunction
 from ...attrs import define, documented
-from ...data.convert import make_aer_core_v2
+from ...data.convert import make_prt_cloud_v1
 from ...grid import SpatialGrid, CartesianGrid
 from ...kernel import SceneParameter
 from ...radprops._particles import ParticleProperties
@@ -813,7 +813,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         n_theta = len(theta_sorted)
         n_phamat = phase_compact.shape[0]
 
-        properties = make_aer_core_v2(
+        properties = make_prt_cloud_v1(
             w=np.atleast_1d(w_ref),
             phamat=list(pp.data["phamat"].values),
             mu=ureg.Quantity(
