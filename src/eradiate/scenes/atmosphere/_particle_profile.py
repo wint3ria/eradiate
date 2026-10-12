@@ -2,8 +2,9 @@
 Particle profiles.
 
 Particle profiles describe the spatial distribution of a particle field:
-which voxels are populated, and the local particle size distribution
-parameters and mass concentration at each of them.
+the local particle size distribution parameters and mass concentration at
+every voxel of a regular grid. Voxels with no particles carry a mass
+concentration of zero.
 """
 
 from __future__ import annotations
@@ -51,13 +52,13 @@ def _clip_and_interp(
 @define
 class ParticleProfile:
     """
-    Sparse, per-voxel description of a spatially varying particle field, in
-    the :ref:`Ppr v1 <sec-data-formats-ppr_v1>` format.
+    Dense, per-voxel description of a spatially varying particle field, in
+    the :ref:`Pfd-Core v1 <sec-data-formats-pfd_core_v1>` format.
     """
 
     data: xr.Dataset = documented(
         attrs.field(validator=attrs.validators.instance_of(xr.Dataset)),
-        doc="Particle profile dataset, in Ppr v1 format.",
+        doc="Particle profile dataset, in Pfd-Core v1 format.",
         type="xarray.Dataset",
         init_type="xarray.Dataset",
     )
@@ -90,9 +91,6 @@ class ParticleProfile:
         missing = [
             name
             for name in (
-                "i_x",
-                "i_y",
-                "i_z",
                 "reff",
                 "veff",
                 "mass_concentration",
@@ -212,29 +210,17 @@ class ParticleProfile:
         z_centers_tgt = grid.layers.m_as(ureg.meter)
         n_z_src = len(z_centers_src)
 
-        ix = self.data["i_x"].values
-        iy = self.data["i_y"].values
-        iz = self.data["i_z"].values
-        n_x = grid.n_cells_x
-        n_y = grid.n_cells_y
-
         mass_concentration_unit = str(
             to_quantity(self.data["mass_concentration"]).units
         )
         reff_unit = str(self.data["reff"].attrs.get("units", "micron"))
         veff_unit = str(self.data["veff"].attrs.get("units", "dimensionless"))
 
-        reff_src = np.zeros((n_x, n_y, n_z_src))
-        veff_src = np.zeros((n_x, n_y, n_z_src))
-        mass_concentration_src = np.zeros((n_x, n_y, n_z_src))
-        valid_src = np.zeros((n_x, n_y, n_z_src), dtype=bool)
-
-        valid_src[ix, iy, iz] = True
-        reff_src[ix, iy, iz] = to_quantity(self.data["reff"]).m_as(reff_unit)
-        veff_src[ix, iy, iz] = to_quantity(self.data["veff"]).m_as(veff_unit)
-        mass_concentration_src[ix, iy, iz] = to_quantity(
+        reff_src = to_quantity(self.data["reff"]).m_as(reff_unit)  # (z, y, x)
+        veff_src = to_quantity(self.data["veff"]).m_as(veff_unit)  # (z, y, x)
+        mass_concentration_src = to_quantity(
             self.data["mass_concentration"]
-        ).m_as(mass_concentration_unit)
+        ).m_as(mass_concentration_unit)  # (z, y, x)
 
         # Nearest-neighbour lookup
         il = np.searchsorted(z_centers_src, z_centers_tgt, side="right") - 1
@@ -247,35 +233,38 @@ class ParticleProfile:
         mid = 0.5 * (z_centers_src[il_safe] + z_centers_src[iu_safe])
         inn = np.where(z_centers_tgt < mid, il_safe, iu_safe)
 
-        reff_tgt = reff_src[:, :, inn]
-        veff_tgt = veff_src[:, :, inn]
-        mass_concentration_tgt = mass_concentration_src[:, :, inn]
-        valid_tgt = valid_src[:, :, inn] & in_range
+        reff_tgt = reff_src[inn, :, :]
+        veff_tgt = veff_src[inn, :, :]
+        mass_concentration_tgt = mass_concentration_src[inn, :, :]
 
-        ix_tgt, iy_tgt, iz_tgt = np.where(valid_tgt)
+        out_of_range = ~in_range
+        if np.any(out_of_range):
+            mass_concentration_tgt = mass_concentration_tgt.copy()
+            mass_concentration_tgt[out_of_range, :, :] = 0.0
 
         data_vars = {
-            "i_x": (["index"], ix_tgt),
-            "i_y": (["index"], iy_tgt),
-            "i_z": (["index"], iz_tgt),
-            "reff": (
-                ["index"],
-                reff_tgt[ix_tgt, iy_tgt, iz_tgt],
-                {"units": reff_unit},
-            ),
-            "veff": (
-                ["index"],
-                veff_tgt[ix_tgt, iy_tgt, iz_tgt],
-                {"units": veff_unit},
-            ),
+            "reff": (["z", "y", "x"], reff_tgt, {"units": reff_unit}),
+            "veff": (["z", "y", "x"], veff_tgt, {"units": veff_unit}),
             "mass_concentration": (
-                ["index"],
-                mass_concentration_tgt[ix_tgt, iy_tgt, iz_tgt],
+                ["z", "y", "x"],
+                mass_concentration_tgt,
                 {"units": mass_concentration_unit},
             ),
-            "x_levels": (["x"], x_levels_out.m, {"units": str(x_levels_out.units)}),
-            "y_levels": (["y"], y_levels_out.m, {"units": str(y_levels_out.units)}),
-            "z_levels": (["z"], grid.levels.m, {"units": str(grid.levels.units)}),
+            "x_levels": (
+                ["x_levels"],
+                x_levels_out.m,
+                {"units": str(x_levels_out.units)},
+            ),
+            "y_levels": (
+                ["y_levels"],
+                y_levels_out.m,
+                {"units": str(y_levels_out.units)},
+            ),
+            "z_levels": (
+                ["z_levels"],
+                grid.levels.m,
+                {"units": str(grid.levels.units)},
+            ),
         }
 
         return ParticleProfile(data=xr.Dataset(data_vars=data_vars))
@@ -284,34 +273,30 @@ class ParticleProfile:
         """
         Continuously interpolate a ``(reff, veff)``-indexed property grid
         (e.g. an ext/ssa grid from :class:`.ParticleProperties`) at this
-        profile's own per-voxel ``reff``/``veff`` (dims ``index``).
+        profile's own per-voxel ``reff``/``veff`` (dims ``z``, ``y``, ``x``).
 
         Points are clipped to *property_grid*'s own ``reff``/``veff``
         coordinate range, so that voxels sitting exactly on (or just past,
         from floating-point drift) the properties grid boundary do not
         turn into NaNs.
         """
-        reff_pts = xr.DataArray(self.data["reff"].values, dims="index")
-        veff_pts = xr.DataArray(self.data["veff"].values, dims="index")
+        reff_pts = xr.DataArray(self.data["reff"].values, dims=["z", "y", "x"])
+        veff_pts = xr.DataArray(self.data["veff"].values, dims=["z", "y", "x"])
         return _clip_and_interp(property_grid, reff_pts, veff_pts)
 
     def to_reff_veff_volumes(self) -> tuple[ureg.Quantity, ureg.Quantity]:
         """
-        Scatter this (regular) profile's per-voxel ``reff``/``veff`` into
-        dense ``(n_x, n_y, n_z)`` volumes. NaN marks empty cells.
+        Return this profile's per-voxel ``reff``/``veff`` as dense
+        ``(n_x, n_y, n_z)`` volumes. NaN marks empty cells.
         """
-        n_x = len(self.data["x_levels"]) - 1
-        n_y = len(self.data["y_levels"]) - 1
-        n_z = len(self.data["z_levels"]) - 1
+        mass_concentration = self.data["mass_concentration"].values  # (z, y, x)
+        empty = mass_concentration <= 0
 
-        reff_volume = np.full((n_x, n_y, n_z), np.nan, dtype=np.float64)
-        veff_volume = np.full((n_x, n_y, n_z), np.nan, dtype=np.float64)
+        reff_zyx = np.where(empty, np.nan, self.data["reff"].values)
+        veff_zyx = np.where(empty, np.nan, self.data["veff"].values)
 
-        ix = self.data["i_x"].values
-        iy = self.data["i_y"].values
-        iz = self.data["i_z"].values
-        reff_volume[ix, iy, iz] = self.data["reff"].values
-        veff_volume[ix, iy, iz] = self.data["veff"].values
+        reff_volume = np.transpose(reff_zyx, (2, 1, 0))
+        veff_volume = np.transpose(veff_zyx, (2, 1, 0))
 
         return (
             ureg.Quantity(reff_volume, self.data["reff"].attrs["units"]),
