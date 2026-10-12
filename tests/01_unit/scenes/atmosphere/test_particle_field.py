@@ -583,8 +583,8 @@ def test_to_particle_ensemble_fixed_composition_matches_field(mode_mono):
         grid.n_cells_x,
         grid.n_cells_y,
     )
-    assert ensemble.bottom == grid.levels[0]
-    assert ensemble.top == grid.levels[-1]
+    assert np.all(ensemble.bottom == grid.levels[0])
+    assert np.all(ensemble.top == grid.levels[-1])
 
     sigma_t_field = pf.eval_sigma_t(si, grid).m_as("1/km")
     sigma_t_ensemble = ensemble.eval_sigma_t(si, grid).m_as("1/km")

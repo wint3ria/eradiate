@@ -625,8 +625,8 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         )
 
         return ParticleAOTComponent(
-            bottom=grid.levels[0],
-            top=grid.levels[-1],
+            bottom=np.broadcast_to(grid.levels[0], (grid.n_cells_x, grid.n_cells_y)),
+            top=np.broadcast_to(grid.levels[-1], (grid.n_cells_x, grid.n_cells_y)),
             distribution=distribution,
             w_ref=wavelength[0],
             tau_ref=tau_ref,
