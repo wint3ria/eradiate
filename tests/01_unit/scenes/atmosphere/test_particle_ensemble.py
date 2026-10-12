@@ -6,7 +6,7 @@ import xarray as xr
 from eradiate import KernelContext, fresolver
 from eradiate import unit_registry as ureg
 from eradiate.grid import SpatialGrid, CartesianGrid, SphericalGrid
-from eradiate.data.convert import make_aer_core_v2
+from eradiate.data.convert import make_prt_cloud_v1
 from eradiate.radprops import ParticleProperties
 from eradiate.scenes.atmosphere import (
     ArrayParticleDistribution,
@@ -160,7 +160,7 @@ class TestParticleAOTComponent:
         """Raises when 'particle_properties' has 'reff'/'veff' dimensions."""
         mu = np.linspace(-1.0, 1.0, 5)
         theta = np.rad2deg(np.arccos(mu))
-        properties_with_size_dist = make_aer_core_v2(
+        properties_with_size_dist = make_prt_cloud_v1(
             w=ureg.Quantity([1.0], "micron"),
             phamat=["11"],
             mu=ureg.Quantity(
