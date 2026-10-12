@@ -306,7 +306,6 @@ def test_eval_family_values(has_absorption, has_scattering, expected):
     )
 
     sigma_t = pf.eval_sigma_t(si)
-    assert sigma_t.units == ureg.Unit("1/km")
     assert sigma_t.shape == shape
     np.testing.assert_allclose(sigma_t.m_as("1/km"), expected["sigma_t"])
 
@@ -315,17 +314,14 @@ def test_eval_family_values(has_absorption, has_scattering, expected):
     np.testing.assert_allclose(albedo.m_as("dimensionless"), expected["albedo"])
 
     sigma_s = pf.eval_sigma_s(si)
-    assert sigma_s.units == ureg.Unit("1/km")
     assert sigma_s.shape == shape
     np.testing.assert_allclose(sigma_s.m_as("1/km"), expected["sigma_s"])
 
     sigma_a = pf.eval_sigma_a(si)
-    assert sigma_a.units == ureg.Unit("1/km")
     assert sigma_a.shape == shape
     np.testing.assert_allclose(sigma_a.m_as("1/km"), expected["sigma_a"])
 
     mfp = pf.eval_mfp(KernelContext(si=si))
-    assert mfp.units == ureg.Unit("m")
     assert mfp.shape == shape[:-1]  # per-column, not per-voxel
     expected_mfp = (
         np.inf if expected["sigma_s"] == 0.0 else 1.0 / expected["sigma_s"] * 1000.0

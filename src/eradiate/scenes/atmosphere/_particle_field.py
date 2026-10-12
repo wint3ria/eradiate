@@ -280,7 +280,9 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         units = uck.get("collision_coefficient")
         if not self.has_scattering:
             return ureg.Quantity(np.zeros(grid.shape, dtype=np.float64), units)
-        return self.eval_sigma_t(si, grid) * self.eval_albedo(si, grid).m_as(units)
+        return self.eval_sigma_t(si, grid) * self.eval_albedo(si, grid).m_as(
+            ureg.dimensionless
+        )
 
     def eval_sigma_a(
         self, si: SpectralIndex, grid: SpatialGrid | None = None
@@ -589,6 +591,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
         """
         grid = grid or particle_field.geometry.grid
         col_units = uck.get("collision_coefficient")
+        length_units = uck.get("length")
         wavelength = np.atleast_1d(w)
         pp = particle_field.properties
 
@@ -601,7 +604,7 @@ class ParticleField(AbstractHeterogeneousAtmosphere):
 
         sigma_t_grid = np.transpose(sigma_t.m_as(col_units), (2, 1, 0))  # ->(x,y,z)
 
-        layer_height = np.diff(grid.levels.m_as(ureg.km))
+        layer_height = np.diff(grid.levels.m_as(length_units))
         tau_per_voxel = sigma_t_grid * layer_height[np.newaxis, np.newaxis, :]
         tau_ref = ureg.Quantity(tau_per_voxel.sum(axis=-1), ureg.dimensionless)
 
