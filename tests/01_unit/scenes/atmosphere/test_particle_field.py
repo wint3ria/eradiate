@@ -63,7 +63,7 @@ def make_profile_dataset(
     mass_concentration=1e-3,
     z_levels=None,
 ) -> xr.Dataset:
-    """Build a Ppr v1 profile dataset densely filling every voxel of ``grid``."""
+    """Build a dense Pfd-Core v1 profile dataset filling every voxel of ``grid``."""
     n_x, n_y = grid.n_cells_x, grid.n_cells_y
     z_levels_km = (
         np.asarray(z_levels, dtype=float)
@@ -71,39 +71,27 @@ def make_profile_dataset(
         else grid.levels.m_as("km")
     )
     n_z = len(z_levels_km) - 1
+    shape = (n_z, n_y, n_x)
 
-    ix, iy, iz = (
-        a.ravel()
-        for a in np.meshgrid(
-            np.arange(n_x), np.arange(n_y), np.arange(n_z), indexing="ij"
-        )
-    )
-    n_pts = n_x * n_y * n_z
+    def _to_zyx(value):
+        arr = np.asarray(value, dtype=float)
+        if arr.ndim == 1 and arr.shape[0] == n_z:
+            arr = arr.reshape(n_z, 1, 1)
+        return np.broadcast_to(arr, shape).copy()
 
     data_vars = {
-        "i_x": (["index"], ix),
-        "i_y": (["index"], iy),
-        "i_z": (["index"], iz),
-        "reff": (
-            ["index"],
-            np.broadcast_to(np.asarray(reff, dtype=float), n_pts),
-            {"units": "micron"},
-        ),
-        "veff": (
-            ["index"],
-            np.broadcast_to(np.asarray(veff, dtype=float), n_pts),
-            {"units": "dimensionless"},
-        ),
+        "reff": (["z", "y", "x"], _to_zyx(reff), {"units": "micron"}),
+        "veff": (["z", "y", "x"], _to_zyx(veff), {"units": "dimensionless"}),
         "mass_concentration": (
-            ["index"],
-            np.broadcast_to(np.asarray(mass_concentration, dtype=float), n_pts),
+            ["z", "y", "x"],
+            _to_zyx(mass_concentration),
             {"units": "g/m^3"},
         ),
     }
     coords = {
-        "x_levels": (["x"], grid.edges_x.m_as("km"), {"units": "kilometer"}),
-        "y_levels": (["y"], grid.edges_y.m_as("km"), {"units": "kilometer"}),
-        "z_levels": (["z"], z_levels_km, {"units": "kilometer"}),
+        "x_levels": (["x_levels"], grid.edges_x.m_as("km"), {"units": "kilometer"}),
+        "y_levels": (["y_levels"], grid.edges_y.m_as("km"), {"units": "kilometer"}),
+        "z_levels": (["z_levels"], z_levels_km, {"units": "kilometer"}),
     }
 
     return xr.Dataset(data_vars=data_vars, coords=coords)
@@ -387,21 +375,22 @@ def test_reff_veff_interpolation_and_clipping():
     )
     geometry = PlaneParallelGeometry(grid=grid, toa_altitude=grid.levels[-1])
 
-    # 2 populated voxels: one with reff inside the grid (interpolated),
-    # one with reff far outside the grid range (must clip, not NaN).
+    # One voxel with reff inside the grid (interpolated), one with reff far
+    # outside the grid range (must clip, not NaN).
     profile = xr.Dataset(
         data_vars={
-            "i_x": (["index"], [0, 1]),
-            "i_y": (["index"], [0, 0]),
-            "i_z": (["index"], [0, 0]),
-            "reff": (["index"], [15.0, 1000.0], {"units": "micron"}),
-            "veff": (["index"], [0.1, 0.1], {"units": "dimensionless"}),
-            "mass_concentration": (["index"], [1.0, 1.0], {"units": "g/m^3"}),
+            "reff": (["z", "y", "x"], [[[15.0, 1000.0]]], {"units": "micron"}),
+            "veff": (["z", "y", "x"], [[[0.1, 0.1]]], {"units": "dimensionless"}),
+            "mass_concentration": (
+                ["z", "y", "x"],
+                [[[1.0, 1.0]]],
+                {"units": "g/m^3"},
+            ),
         },
         coords={
-            "x_levels": (["x"], grid.edges_x.m_as("km"), {"units": "kilometer"}),
-            "y_levels": (["y"], grid.edges_y.m_as("km"), {"units": "kilometer"}),
-            "z_levels": (["z"], grid.levels.m_as("km"), {"units": "kilometer"}),
+            "x_levels": (["x_levels"], grid.edges_x.m_as("km"), {"units": "kilometer"}),
+            "y_levels": (["y_levels"], grid.edges_y.m_as("km"), {"units": "kilometer"}),
+            "z_levels": (["z_levels"], grid.levels.m_as("km"), {"units": "kilometer"}),
         },
     )
     properties = make_properties_dataset(
@@ -519,31 +508,18 @@ def test_to_profile_regular_grid():
     assert result.properties is pf.properties
 
 
-def test_to_particle_ensemble_from_profile_point_invalid_size_raises():
-    """to_particle_ensemble_from_profile_point rejects a profile_point spanning more than one index."""
-    pf = make_particle_field(w=(1.0,))
-    resampled = pf.profile.resample_regular(pf.geometry.grid)
-
-    with pytest.raises(ValueError, match="exactly one point"):
-        ParticleField.to_particle_ensemble_from_profile_point(
-            pf,
-            resampled.data.isel(index=slice(0, 2)),
-            w=ureg.Quantity(1.0, "micron"),
-        )
-
-
-def test_to_particle_ensemble_invalid_voxel_raises():
-    """to_particle_ensemble raises when the requested voxel index has no cloud."""
+def test_to_particle_aot_component_invalid_voxel_raises():
+    """to_particle_aot_component raises when the requested voxel index has no cloud."""
     pf = make_particle_field(w=(1.0,))
 
     with pytest.raises(ValueError, match="No cloud voxel"):
-        ParticleField.to_particle_ensemble(
+        ParticleField.to_particle_aot_component(
             pf, w=ureg.Quantity(1.0, "micron"), ix=999, iy=999, iz=999
         )
 
 
-def test_to_particle_ensemble_tau_ref_concentrated_at_voxel(mode_mono):
-    """to_particle_ensemble places the whole voxel's tau_ref at its own (x, y) cell, zero elsewhere."""
+def test_to_particle_aot_component_tau_ref_concentrated_at_voxel(mode_mono):
+    """to_particle_aot_component places the whole voxel's tau_ref at its own (x, y) cell, zero elsewhere."""
     pf = make_particle_field(
         n_x=2,
         n_y=2,
@@ -556,7 +532,7 @@ def test_to_particle_ensemble_tau_ref_concentrated_at_voxel(mode_mono):
     grid = pf.geometry.grid
     w = ureg.Quantity(1.0, "micron")
 
-    layer = ParticleField.to_particle_ensemble(pf, w=w, ix=0, iy=1, iz=0)
+    layer = ParticleField.to_particle_aot_component(pf, w=w, ix=0, iy=1, iz=0)
 
     assert isinstance(layer, ParticleAOTComponent)
     assert layer.bottom == grid.levels[0]
@@ -734,7 +710,7 @@ def test_from_particle_ensemble_custom_grid(mode_mono):
 
 
 def test_theta_convention_consistency(mode_mono):
-    """to_particle_ensemble/from_particle_ensemble preserve theta/mu ordering through a round trip."""
+    """to_particle_aot_component/from_particle_ensemble preserve theta/mu ordering through a round trip."""
     theta_values_desc = np.array([180.0, 150.0, 100.0, 20.0, 0.0])
     mu_values_asc = np.cos(np.deg2rad(theta_values_desc))
     n_theta = len(theta_values_desc)
@@ -770,7 +746,7 @@ def test_theta_convention_consistency(mode_mono):
     )
     pf = ParticleField(profile=profile, properties=properties, geometry=geometry)
 
-    layer = ParticleField.to_particle_ensemble(
+    layer = ParticleField.to_particle_aot_component(
         pf, w=ureg.Quantity(1.0, "micron"), ix=0, iy=0, iz=0
     )
 
