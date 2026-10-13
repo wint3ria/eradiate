@@ -281,7 +281,7 @@ class PlaneParallelGeometry(SceneGeometry):
             top = self.toa_altitude
             step = min(100.0 * ureg.m, (top - bottom) / 10.0)
 
-            self.grid = SpatialGrid.make_onedim_arange(top, bottom, step, self.width)
+            self.grid = SpatialGrid.make_1d_arange(top, bottom, step, self.width)
 
 
 @define
