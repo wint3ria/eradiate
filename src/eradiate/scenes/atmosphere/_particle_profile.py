@@ -14,6 +14,7 @@ from typing import Any
 
 import attrs
 import numpy as np
+import pint
 import xarray as xr
 
 from ...attrs import define, documented
@@ -62,6 +63,21 @@ class ParticleProfile:
         init_type="xarray.Dataset",
     )
 
+    # The following fields are used to cache properties
+    # -- Effective radius
+    _reff: pint.Quantity | None = attrs.field(default=None, init=False, repr=False)
+    # -- Effective variance
+    _veff: pint.Quantity | None = attrs.field(default=None, init=False, repr=False)
+    # -- Mass concentration
+    _mass_concentration: pint.Quantity | None = attrs.field(
+        default=None, init=False, repr=False
+    )
+
+    def __attrs_post_init__(self):
+        # Resolve all cached attributes
+        for attr in ["reff", "veff", "mass_concentration"]:
+            getattr(self, attr)
+
     @classmethod
     def convert(cls, value: Any) -> ParticleProfile:
         """
@@ -104,8 +120,44 @@ class ParticleProfile:
                 f"Particle profile dataset is missing required variable(s): {missing}"
             )
 
+    @property
+    def reff(self) -> pint.Quantity:
+        """
+        Returns
+        -------
+        pint.Quantity
+            Effective radius grid, cached to minimize overhead.
+        """
+        if self._reff is None:
+            self._reff = to_quantity(self.data["reff"])
+        return self._reff
+
+    @property
+    def veff(self) -> pint.Quantity:
+        """
+        Returns
+        -------
+        pint.Quantity
+            Effective variance grid, cached to minimize overhead.
+        """
+        if self._veff is None:
+            self._veff = to_quantity(self.data["veff"])
+        return self._veff
+
+    @property
+    def mass_concentration(self) -> pint.Quantity:
+        """
+        Returns
+        -------
+        pint.Quantity
+            Mass concentration grid, cached to minimize overhead.
+        """
+        if self._mass_concentration is None:
+            self._mass_concentration = to_quantity(self.data["mass_concentration"])
+        return self._mass_concentration
+
     @staticmethod
-    def _check_regular(name: str, values: np.ndarray) -> None:
+    def _check_regular(name: str, values: pint.Quantity) -> None:
         """Raise if ``values`` isn't evenly spaced."""
         step = np.diff(values)
         if not np.allclose(step, step[0]):
@@ -159,11 +211,14 @@ class ParticleProfile:
         self._check_regular("x_levels", x_levels)
         self._check_regular("y_levels", y_levels)
 
+        x_levels_m = x_levels.m_as(x_grid_edges.units)
+        y_levels_m = y_levels.m_as(y_grid_edges.units)
+
         if (
-            x_levels.shape != x_grid_edges.shape
-            or y_levels.shape != y_grid_edges.shape
-            or not np.allclose(x_levels, x_grid_edges)
-            or not np.allclose(y_levels, y_grid_edges)
+            x_levels_m.shape != x_grid_edges.shape
+            or y_levels_m.shape != y_grid_edges.shape
+            or not np.allclose(x_levels_m, x_grid_edges.m)
+            or not np.allclose(y_levels_m, y_grid_edges.m)
         ):
             raise ValueError(
                 "Profile 'x_levels'/'y_levels' do not match the target "
@@ -200,17 +255,13 @@ class ParticleProfile:
         z_centers_tgt = grid.layers.m_as(ureg.meter)
         n_z_src = len(z_centers_src)
 
-        mass_concentration_unit = str(
-            to_quantity(self.data["mass_concentration"]).units
-        )
-        reff_unit = str(self.data["reff"].attrs.get("units", "micron"))
-        veff_unit = str(self.data["veff"].attrs.get("units", "dimensionless"))
+        mass_concentration_unit = str(self.mass_concentration.units)
+        reff_unit = str(self.reff.units)
+        veff_unit = str(self.veff.units)
 
-        reff_src = to_quantity(self.data["reff"]).m_as(reff_unit)  # (z, y, x)
-        veff_src = to_quantity(self.data["veff"]).m_as(veff_unit)  # (z, y, x)
-        mass_concentration_src = to_quantity(
-            self.data["mass_concentration"]
-        ).m_as(mass_concentration_unit)  # (z, y, x)
+        reff_src = self.reff.m  # (z, y, x)
+        veff_src = self.veff.m  # (z, y, x)
+        mass_concentration_src = self.mass_concentration.m  # (z, y, x)
 
         # Nearest-neighbour lookup
         il = np.searchsorted(z_centers_src, z_centers_tgt, side="right") - 1
@@ -270,8 +321,18 @@ class ParticleProfile:
         from floating-point drift) the properties grid boundary do not
         turn into NaNs.
         """
-        reff_pts = xr.DataArray(self.data["reff"].values, dims=["z", "y", "x"])
-        veff_pts = xr.DataArray(self.data["veff"].values, dims=["z", "y", "x"])
+        reff_grid = to_quantity(property_grid["reff"])
+        veff_grid = to_quantity(property_grid["veff"])
+        reff_pts = xr.DataArray(
+            self.reff.m_as(reff_grid.units),
+            dims=["z", "y", "x"],
+            attrs={"units": str(reff_grid.units)},
+        )
+        veff_pts = xr.DataArray(
+            self.veff.m_as(veff_grid.units),
+            dims=["z", "y", "x"],
+            attrs={"units": str(veff_grid.units)},
+        )
         return _clip_and_interp(property_grid, reff_pts, veff_pts)
 
     def to_reff_veff_volumes(self) -> tuple[ureg.Quantity, ureg.Quantity]:
@@ -279,16 +340,15 @@ class ParticleProfile:
         Return this profile's per-voxel ``reff``/``veff`` as dense
         ``(n_x, n_y, n_z)`` volumes. NaN marks empty cells.
         """
-        mass_concentration = self.data["mass_concentration"].values  # (z, y, x)
-        empty = mass_concentration <= 0
+        empty = self.mass_concentration.m <= 0  # (z, y, x)
 
-        reff_zyx = np.where(empty, np.nan, self.data["reff"].values)
-        veff_zyx = np.where(empty, np.nan, self.data["veff"].values)
+        reff_zyx = np.where(empty, np.nan, self.reff.m)
+        veff_zyx = np.where(empty, np.nan, self.veff.m)
 
         reff_volume = np.transpose(reff_zyx, (2, 1, 0))
         veff_volume = np.transpose(veff_zyx, (2, 1, 0))
 
         return (
-            ureg.Quantity(reff_volume, self.data["reff"].attrs["units"]),
-            ureg.Quantity(veff_volume, self.data["veff"].attrs["units"]),
+            ureg.Quantity(reff_volume, self.reff.units),
+            ureg.Quantity(veff_volume, self.veff.units),
         )
