@@ -9,7 +9,6 @@ concentration of zero.
 
 from __future__ import annotations
 
-from functools import singledispatchmethod
 from os import PathLike
 from typing import Any
 
@@ -112,7 +111,6 @@ class ParticleProfile:
         if not np.allclose(step, step[0]):
             raise ValueError(f"'{name}' must be regularly spaced")
 
-    @singledispatchmethod
     def resample_regular(self, grid: SpatialGrid) -> ParticleProfile:
         """
         Resample the profile onto a regular grid.
@@ -138,51 +136,43 @@ class ParticleProfile:
             If the profile's ``x_levels``/``y_levels`` are not regularly
             spaced, or do not match ``grid``'s extent and resolution.
         """
-        raise NotImplementedError(
-            f"resample_regular() is not implemented for grid type {type(grid).__name__}"
-        )
 
-    @resample_regular.register(CartesianGrid)
-    def _(self, grid) -> ParticleProfile:
-        x_levels = to_quantity(self.data["x_levels"]).m_as(grid.edges_x.units)
-        y_levels = to_quantity(self.data["y_levels"]).m_as(grid.edges_y.units)
-        self._check_regular("x_levels", x_levels)
-        self._check_regular("y_levels", y_levels)
+        return self._resample_regular_impl(grid)
 
-        if (
-            x_levels.shape != grid.edges_x.shape
-            or y_levels.shape != grid.edges_y.shape
-            or not np.allclose(x_levels, grid.edges_x.m)
-            or not np.allclose(y_levels, grid.edges_y.m)
-        ):
-            raise ValueError(
-                "Profile 'x_levels'/'y_levels' do not match the target "
-                "grid's extent and resolution."
-            )
-
-        return self._resample_z(grid, grid.edges_x, grid.edges_y)
-
-    @resample_regular.register(SphericalGrid)
-    def _(self, grid) -> ParticleProfile:
-        x_levels = to_quantity(self.data["x_levels"]).m_as(grid.azimuths.units)
-        y_levels = to_quantity(self.data["y_levels"]).m_as(grid.colatitudes.units)
-        self._check_regular("x_levels", x_levels)
-        self._check_regular("y_levels", y_levels)
-
-        if (
-            x_levels.shape != grid.azimuths.shape
-            or y_levels.shape != grid.colatitudes.shape
-            or not np.allclose(x_levels, grid.azimuths.m)
-            or not np.allclose(y_levels, grid.colatitudes.m)
-        ):
-            raise ValueError(
-                "Profile 'x_levels'/'y_levels' do not match the target "
-                "grid's extent and resolution."
-            )
-
-        return self._resample_z(grid, grid.azimuths, grid.colatitudes)
 
     @cache_by_id
+    def _resample_regular_impl(self, grid: SpatialGrid) -> ParticleProfile:
+
+        if isinstance(grid, CartesianGrid):
+            x_levels = to_quantity(self.data["x_levels"])
+            y_levels = to_quantity(self.data["y_levels"])
+            x_grid_edges = grid.edges_x
+            y_grid_edges = grid.edges_y
+        elif isinstance(grid, SphericalGrid):
+            x_levels = to_quantity(self.data["x_levels"])
+            y_levels = to_quantity(self.data["y_levels"])
+            x_grid_edges = grid.azimuths
+            y_grid_edges = grid.colatitudes
+        else:
+            raise TypeError(f"unsupported grid type {type(grid).__name__}")
+
+        self._check_regular("x_levels", x_levels)
+        self._check_regular("y_levels", y_levels)
+
+        if (
+            x_levels.shape != x_grid_edges.shape
+            or y_levels.shape != y_grid_edges.shape
+            or not np.allclose(x_levels, x_grid_edges)
+            or not np.allclose(y_levels, y_grid_edges)
+        ):
+            raise ValueError(
+                "Profile 'x_levels'/'y_levels' do not match the target "
+                "grid's extent and resolution."
+            )
+
+        return self._resample_z(grid, x_grid_edges, y_grid_edges)
+
+
     def _resample_z(
         self,
         grid: SpatialGrid,
