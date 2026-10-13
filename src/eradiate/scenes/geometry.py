@@ -22,17 +22,17 @@ from ..units import unit_registry as ureg
 
 
 class WrapMode(Enum):
-    CLAMP = 0
-    REPEAT = 1
-    MIRROR = 2
+    CLAMP = "clamp"
+    REPEAT = "repeat"
+    MIRROR = "mirror"
 
     def __str__(self):
         return self.name.lower()
 
 
 class FilterType(Enum):
-    TRILINEAR = 0
-    NEAREST = 1
+    TRILINEAR = "trilinear"
+    NEAREST = "nearest"
 
     def __str__(self) -> str:
         return self.name.lower()

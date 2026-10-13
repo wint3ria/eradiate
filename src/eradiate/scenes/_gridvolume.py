@@ -221,7 +221,7 @@ def generate_gridvolume(
         If ``True``, pass ``ctx.si`` instead of ``ctx`` to ``eval_grid``.
 
     units : pint.Unit, optional
-    If set, convert grid values to these units before processing.
+        If set, convert grid values to these units before processing.
 
     dtype : numpy.dtype, optional, default: None
         NumPy dtype of the resulting grid buffer.

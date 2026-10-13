@@ -5,11 +5,11 @@ from abc import ABC, abstractmethod
 import mitsuba as mi
 import numpy as np
 import pint
-import pinttr
+import pinttrs
 import xarray as xr
-from pinttr.util import ensure_units
+from pinttrs.util import ensure_units
 
-from eradiate.kernel.transform import map_unit_cube
+from .kernel.transform import map_unit_cube
 
 from . import _repr_diagrams
 from .attrs import documented, frozen
@@ -48,7 +48,7 @@ class SpatialGrid(ABC):
     """
 
     levels: pint.Quantity = documented(
-        pinttr.field(
+        pinttrs.field(
             units=ucc.deferred("length"),
             on_setattr=None,
         ),
@@ -57,12 +57,12 @@ class SpatialGrid(ABC):
         doc="Grid node altitudes.\n\nUnit-enabled field (default: ``ucc['length']``).",
     )
 
-    _layers: pint.Quantity = pinttr.field(
+    _layers: pint.Quantity = pinttrs.field(
         units=ucc.deferred("length"),
         on_setattr=None,
     )
 
-    _layer_height: pint.Quantity = pinttr.field(
+    _layer_height: pint.Quantity = pinttrs.field(
         units=ucc.deferred("length"),
         on_setattr=None,
     )
@@ -72,13 +72,13 @@ class SpatialGrid(ABC):
         if not np.isscalar(value.magnitude):
             raise ValueError("layer height must be a scalar")
 
-    _total_height: pint.Quantity = pinttr.field(
+    _total_height: pint.Quantity = pinttrs.field(
         units=ucc.deferred("length"),
         on_setattr=None,
     )
 
     @staticmethod
-    def make_onedim_from_levels(levels: pint.Quantity):
+    def make_1d_from_levels(levels: pint.Quantity):
         """
         Build a plane parallel 1D SpatialGrid using provided ``levels`` to
         define the vertical extent and the horizontal extent comes from
@@ -96,7 +96,7 @@ class SpatialGrid(ABC):
         )
 
     @staticmethod
-    def make_onedim_arange(
+    def make_1d_arange(
         top: pint.Quantity,
         bottom: pint.Quantity,
         step: pint.Quantity,
@@ -123,16 +123,17 @@ class SpatialGrid(ABC):
             Constructed coords grid
         """
 
-        ensure_units(top, default_units=ucc.get("length"))
-        ensure_units(bottom, default_units=ucc.get("length"))
-        ensure_units(width, default_units=ucc.get("length"))
+        units_length = ucc.get("length")
+        ensure_units(top, default_units=units_length)
+        ensure_units(bottom, default_units=units_length)
+        ensure_units(width, default_units=units_length)
 
         levels = ureg.convert(
             np.arange(
                 bottom.m_as(ureg.m), (top + step * 0.1).m_as(ureg.m), step.m_as(ureg.m)
             ),
             ureg.m,
-            ucc.get("length"),
+            units_length,
         )
 
         return CartesianGrid.from_extent_and_resolution(
@@ -144,7 +145,7 @@ class SpatialGrid(ABC):
         )
 
     @staticmethod
-    def make_default():
+    def make_default() -> SpatialGrid:
         """
         Build the default plane parallel 1D SpatialGrid for Eradiate
         atmospheres.
@@ -158,12 +159,12 @@ class SpatialGrid(ABC):
         step = 100.0 * ureg.m
         width = 1e6 * ureg.km
 
-        return SpatialGrid.make_onedim_arange(top, bottom, step, width)
+        return SpatialGrid.make_1d_arange(top, bottom, step, width)
 
     @classmethod
-    def convert(cls, value: t.Any) -> t.Any:
+    def convert(cls, value: Any) -> Any:
         """
-        Attempt conversion of a value to a SpatialGrid.
+        Attempt conversion of a value to a ``SpatialGrid``.
 
         Parameters
         ----------
@@ -201,9 +202,9 @@ class SpatialGrid(ABC):
             elif value_t == "spherical_shell_coords":
                 return SphericalGrid(**value)
         elif isinstance(value, pint.Quantity):
-            return cls.make_onedim_from_levels(value)
+            return cls.make_1d_from_levels(value)
         elif isinstance(value, np.ndarray):
-            return cls.make_onedim_from_levels(value * ureg.m)
+            return cls.make_1d_from_levels(value * ureg.m)
 
         return value
 
@@ -334,7 +335,7 @@ class CartesianGrid(SpatialGrid):
     """
 
     edges_x: pint.Quantity = documented(
-        pinttr.field(
+        pinttrs.field(
             units=ucc.deferred("length"),
             on_setattr=None,
         ),
@@ -344,7 +345,7 @@ class CartesianGrid(SpatialGrid):
     )
 
     edges_y: pint.Quantity = documented(
-        pinttr.field(
+        pinttrs.field(
             units=ucc.deferred("length"),
             on_setattr=None,
         ),
@@ -353,32 +354,32 @@ class CartesianGrid(SpatialGrid):
         doc="Grid node positions in the Y direction.\n\nUnit-enabled field (default: ``ucc['length']``).",
     )
 
-    _centers_x: pint.Quantity = pinttr.field(
+    _centers_x: pint.Quantity = pinttrs.field(
         units=ucc.deferred("length"),
         on_setattr=None,
     )
 
-    _centers_y: pint.Quantity = pinttr.field(
+    _centers_y: pint.Quantity = pinttrs.field(
         units=ucc.deferred("length"),
         on_setattr=None,
     )
 
-    _cell_width: pint.Quantity = pinttr.field(
+    _cell_width: pint.Quantity = pinttrs.field(
         units=ucc.deferred("length"),
         on_setattr=None,
     )
 
-    _cell_length: pint.Quantity = pinttr.field(
+    _cell_length: pint.Quantity = pinttrs.field(
         units=ucc.deferred("length"),
         on_setattr=None,
     )
 
-    _total_width: pint.Quantity = pinttr.field(
+    _total_width: pint.Quantity = pinttrs.field(
         units=ucc.deferred("length"),
         on_setattr=None,
     )
 
-    _total_length: pint.Quantity = pinttr.field(
+    _total_length: pint.Quantity = pinttrs.field(
         units=ucc.deferred("length"),
         on_setattr=None,
     )
@@ -982,7 +983,7 @@ class SphericalGrid(SpatialGrid):
     """
 
     azimuths: pint.Quantity = documented(
-        pinttr.field(
+        pinttrs.field(
             units=ucc.deferred("angle"),
             on_setattr=None,
         ),
@@ -992,7 +993,7 @@ class SphericalGrid(SpatialGrid):
     )
 
     colatitudes: pint.Quantity = documented(
-        pinttr.field(
+        pinttrs.field(
             units=ucc.deferred("angle"),
             on_setattr=None,
         ),
@@ -1001,22 +1002,22 @@ class SphericalGrid(SpatialGrid):
         doc="Grid node colatitudes (Y edges).\n\nUnit-enabled field (default: ``ucc['angle']``).",
     )
 
-    _sectors: pint.Quantity = pinttr.field(
+    _sectors: pint.Quantity = pinttrs.field(
         units=ucc.deferred("angle"),
         on_setattr=None,
     )
 
-    _bands: pint.Quantity = pinttr.field(
+    _bands: pint.Quantity = pinttrs.field(
         units=ucc.deferred("angle"),
         on_setattr=None,
     )
 
-    _sector_width: pint.Quantity = pinttr.field(
+    _sector_width: pint.Quantity = pinttrs.field(
         units=ucc.deferred("angle"),
         on_setattr=None,
     )
 
-    _band_width: pint.Quantity = pinttr.field(
+    _band_width: pint.Quantity = pinttrs.field(
         units=ucc.deferred("angle"),
         on_setattr=None,
     )
