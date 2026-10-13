@@ -77,7 +77,9 @@ class SceneGeometry(ABC):
         attrs.field(
             default=None,
             converter=attrs.converters.optional(
-                lambda x: SpatialGrid.convert(x) if not isinstance(x, SpatialGrid) else x
+                lambda x: (
+                    SpatialGrid.convert(x) if not isinstance(x, SpatialGrid) else x
+                )
             ),
             validator=attrs.validators.optional(
                 attrs.validators.instance_of(SpatialGrid)

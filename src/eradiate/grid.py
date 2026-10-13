@@ -180,7 +180,7 @@ class SpatialGrid(ABC):
 
         * If ``value`` is ``"plane_parallel_grid_coords"``, return a default
           plane parallel ``CartesianGrid``.
-        * If value is a ``pint.Quantity``, attempt to construct a 1D 
+        * If value is a ``pint.Quantity``, attempt to construct a 1D
           ``CartesianGrid`` with the layer altitudes contained in the quantity.
         * If value is a ``np.ndarray``, interpret it as an array of layer
           altitudes in meters and construct a 1D ``CartesianGrid`` using it.
