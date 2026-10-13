@@ -238,9 +238,7 @@ def create_toa(case_id: str, spp: int, padding: int = 5) -> CanopyAtmosphereExpe
             )
         particles["tau_ref"] = 0.2 if aerosol_ot_id == "2" else 0.6
     else:
-        raise ValueError(
-            f"Unhandled particle optical thickness '{aerosol_ot_id}'"
-        )
+        raise ValueError(f"Unhandled particle optical thickness '{aerosol_ot_id}'")
 
     if profile_id != "s":
         raise ValueError(f"Unhandled atmospheric profile id '{profile_id}'")

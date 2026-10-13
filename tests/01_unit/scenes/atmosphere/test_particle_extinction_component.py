@@ -201,9 +201,7 @@ class TestParticleExtinctionComponent:
 
         sigma_s = particles.eval_sigma_s(si)
         expected = 1.0 / sigma_s.min(axis=-1)
-        np.testing.assert_allclose(
-            mfp.m_as("km"), expected.m_as("km"), equal_nan=False
-        )
+        np.testing.assert_allclose(mfp.m_as("km"), expected.m_as("km"), equal_nan=False)
 
     def test_interp_wavelength(self, mode_mono):
         """sigma_t/albedo are linearly interpolated over w."""

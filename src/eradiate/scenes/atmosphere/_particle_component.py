@@ -49,7 +49,6 @@ def _particle_distribution_converter(value):
 
 @define(eq=False, slots=False)
 class ParticleComponent(AbstractHeterogeneousAtmosphere):
-
     """Abstract base class for particulate media"""
 
     has_absorption: bool = documented(
@@ -259,7 +258,6 @@ class ParticleAOTComponent(ParticleComponent):
         default='"govaerts_2021-continental"',
     )
 
-
     _phase: ParticlePhaseFunction | None = attrs.field(default=None, init=False)
 
     def __init__(self, *args, dataset=None, **kwargs):
@@ -381,9 +379,7 @@ class ParticleAOTComponent(ParticleComponent):
 
     @eval_albedo.register(MonoSpectralIndex)
     def _(self, si, grid: SpatialGrid | None = None) -> pint.Quantity:
-        return self.eval_albedo_mono(
-            si, self.geometry.grid if grid is None else grid
-        )
+        return self.eval_albedo_mono(si, self.geometry.grid if grid is None else grid)
 
     @eval_albedo.register(CKDSpectralIndex)
     def _(self, si, grid: SpatialGrid | None = None) -> pint.Quantity:
@@ -420,9 +416,7 @@ class ParticleAOTComponent(ParticleComponent):
 
     @eval_sigma_t.register(MonoSpectralIndex)
     def _(self, si, grid: SpatialGrid | None = None) -> pint.Quantity:
-        return self.eval_sigma_t_mono(
-            si, self.geometry.grid if grid is None else grid
-        )
+        return self.eval_sigma_t_mono(si, self.geometry.grid if grid is None else grid)
 
     @eval_sigma_t.register(CKDSpectralIndex)
     def _(self, si, grid: SpatialGrid | None = None) -> pint.Quantity:
@@ -457,9 +451,7 @@ class ParticleAOTComponent(ParticleComponent):
 
     @eval_sigma_a.register(MonoSpectralIndex)
     def _(self, si, grid: SpatialGrid | None = None) -> pint.Quantity:
-        return self.eval_sigma_a_mono(
-            si, self.geometry.grid if grid is None else grid
-        )
+        return self.eval_sigma_a_mono(si, self.geometry.grid if grid is None else grid)
 
     @eval_sigma_a.register(CKDSpectralIndex)
     def _(self, si, grid: SpatialGrid | None = None) -> pint.Quantity:
@@ -485,9 +477,7 @@ class ParticleAOTComponent(ParticleComponent):
 
     @eval_sigma_s.register(MonoSpectralIndex)
     def _(self, si, grid: SpatialGrid | None = None) -> pint.Quantity:
-        return self.eval_sigma_s_mono(
-            si, self.geometry.grid if grid is None else grid
-        )
+        return self.eval_sigma_s_mono(si, self.geometry.grid if grid is None else grid)
 
     @eval_sigma_s.register(CKDSpectralIndex)
     def _(self, si, grid: SpatialGrid | None = None) -> pint.Quantity:
