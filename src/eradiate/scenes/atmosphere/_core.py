@@ -787,7 +787,7 @@ class AbstractHeterogeneousAtmosphere(Atmosphere, ABC):
             albedo_key = "albedo.volume.data"
             sigma_t_key = "sigma_t.volume.data"
         else:
-            raise TypeError(
+            raise ValueError(
                 f"unhandled scene geometry type '{type(self.geometry).__name__}'"
             )
 

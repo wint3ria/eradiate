@@ -88,12 +88,7 @@ class ParticleComponent(AbstractHeterogeneousAtmosphere):
 
     def eval_mfp(self, ctx: KernelContext) -> pint.Quantity:
         min_sigma_s = self.eval_sigma_s(ctx.si).min(axis=-1)
-        # Dividing a plain ndarray by a Quantity via np.divide(..., out=...)
-        # silently drops the Quantity's units (the result is written to a
-        # unitless buffer), so a hardcoded "* ureg.m" was previously tacked
-        # on -- only correct as long as eval_sigma_s() happens to return
-        # values already expressed in 1/m. Dividing the Quantity directly
-        # keeps pint in charge of the units, and 1/0 naturally yields inf.
+        # Set to inf if sigma_s is zero
         with np.errstate(divide="ignore"):
             return 1.0 / min_sigma_s
 
