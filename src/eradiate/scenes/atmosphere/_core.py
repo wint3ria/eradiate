@@ -10,7 +10,7 @@ import pint
 import xarray as xr
 from axsdb import AbsorptionDatabase
 
-from eradiate.kernel._render import SearchSceneParameter
+from ...kernel import SearchSceneParameter
 
 from .._gridvolume import generate_gridvolume
 from ..core import (
