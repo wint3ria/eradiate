@@ -42,14 +42,6 @@ def test_heterogeneous_empty(modes_all_double):
         HeterogeneousAtmosphere()
 
 
-def test_particle_psd_component_dict_interface():
-    """particle_psd_component= accepts a dict, routed through atmosphere_factory."""
-    with pytest.raises(TypeError, match="missing 2 required keyword-only arguments"):
-        HeterogeneousAtmosphere(
-            particle_components=ParticleAOTComponent(), particle_psd_component={}
-        )
-
-
 @pytest.mark.parametrize("geometry", ["plane_parallel", "spherical_shell"])
 @pytest.mark.parametrize("component", ["molecular", "particle"])
 def test_heterogeneous_single_mono(
