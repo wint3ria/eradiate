@@ -406,7 +406,9 @@ class ParticleProperties:
         """
         if self._phase is None:
             if self.has_size_distribution:
-                self._phase = self.data["phase"].transpose("phamat", "iangle", "w", "reff", "veff")
+                self._phase = self.data["phase"].transpose(
+                    "phamat", "iangle", "w", "reff", "veff"
+                )
             else:
                 self._phase = self.data["phase"].transpose("phamat", "iangle", "w")
         return self._phase
@@ -504,7 +506,6 @@ class ParticleProperties:
 
         all_full = bool(np.all(nangles == n_iangle))
         return all_full and bool(np.all(mu_vals == mu_vals[[0]]))
-
 
     def eval_ext(self, w: pint.Quantity) -> pint.Quantity:
         """

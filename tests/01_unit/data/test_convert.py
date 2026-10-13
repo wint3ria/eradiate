@@ -80,9 +80,7 @@ def _size_distribution_args(
         phase_values = [scale]
     mu = np.tile(mu_1d, (nw, nreff, nveff, 1))
     theta = np.degrees(np.arccos(mu))
-    phase = np.stack(
-        [np.full((nw, nreff, nveff, nangle), v) for v in phase_values]
-    )
+    phase = np.stack([np.full((nw, nreff, nveff, nangle), v) for v in phase_values])
 
     ext = np.zeros((nw, nreff, nveff))
     ssa = np.zeros((nw, nreff, nveff))
@@ -647,9 +645,7 @@ class TestMakePrtCloudV1:
             args = _size_distribution_args(
                 nw=2, nreff=2, nveff=2, phamat=["11", "12"], phase_values=[4.0, 2.0]
             )
-            ds = make_prt_cloud_v1(
-                **args, normalize=True, pmom=np.zeros((2, 2, 2, 2))
-            )
+            ds = make_prt_cloud_v1(**args, normalize=True, pmom=np.zeros((2, 2, 2, 2)))
             ratio = (
                 ds["phase"].sel(phamat="12").values
                 / ds["phase"].sel(phamat="11").values
