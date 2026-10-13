@@ -16,9 +16,9 @@ import attrs
 import numpy as np
 import xarray as xr
 
-from ._core import AbstractHeterogeneousAtmosphere, atmosphere_factory
+from ._core import atmosphere_factory
 from ._particle_dist import ArrayParticleDistribution
-from ._particle_component import ParticleAOTComponent
+from ._particle_component import ParticleComponent, ParticleAOTComponent
 from ._particle_profile import ParticleProfile
 from ..core import traverse
 from ..geometry import PlaneParallelGeometry
@@ -37,7 +37,72 @@ from ...util.misc import cache_by_id
 
 
 @define(eq=False, slots=False)
-class ParticlePSDComponent(AbstractHeterogeneousAtmosphere):
+class ParticleStateComponent(ParticleComponent):
+
+    profile: ParticleProfile = documented(
+        attrs.field(kw_only=True, converter=ParticleProfile.convert),
+        doc="Dense volumetric cloud profile, in the "
+        ":ref:`Pfd-Core v1 <sec-data-formats-pfd_core_v1>` format. "
+        "This parameter has no default.",
+        type="ParticleProfile",
+        init_type="ParticleProfile or Dataset or path-like",
+    )
+
+    properties: ParticleProperties = documented(
+        attrs.field(kw_only=True, converter=ParticleProperties.convert),
+        doc="Particle properties, in the "
+        ":ref:`Prt v1 <sec-data-formats-prt_v1>` format. "
+        "This parameter has no default.",
+        type="ParticleProperties",
+        init_type="ParticleProperties or Dataset or path-like or str",
+    )
+
+    @properties.validator
+    def _properties_validator(self, attribute, value):
+        if not value.has_size_distribution:
+            raise ValueError(
+                "While initialising ParticlePSDComponent: 'properties' must have "
+                "'reff'/'veff' dimensions (a Prt v1 dataset)"
+            )
+
+    amount: str | None = documented(
+        attrs.field(
+            default=None,
+            kw_only=True,
+            validator=attrs.validators.optional(attrs.validators.instance_of(str)),
+        ),
+        doc="Name of the profile variable that scales the per-unit-amount "
+        "extinction (e.g. mass or number concentration). If unset, the "
+        "unique profile variable whose units make ``amount * ext`` an "
+        "inverse length is selected automatically.",
+        type="str or None",
+        init_type="str, optional",
+        default="None",
+    )
+
+    state_variables: dict[str, str] = documented(
+        attrs.field(
+            factory=dict,
+            kw_only=True,
+            validator=attrs.validators.deep_mapping(
+                key_validator=attrs.validators.instance_of(str),
+                value_validator=attrs.validators.instance_of(str),
+                mapping_validator=attrs.validators.instance_of(dict),
+            ),
+        ),
+        doc="Mapping from a properties table state dimension name to the "
+        "profile variable supplying its per-voxel value. State dimensions "
+        "not listed here default to a profile variable of the same name.",
+        type="dict[str, str]",
+        init_type="dict[str, str], optional",
+        default="{}",
+    )
+
+    _phase: GriddedParticlePhaseFunction = None
+
+
+@define(eq=False, slots=False)
+class ParticlePSDComponent(ParticleStateComponent):
     """
     Atmospheric medium representing a particle PSD component with spatially
     heterogeneous physical properties.
@@ -73,50 +138,6 @@ class ParticlePSDComponent(AbstractHeterogeneousAtmosphere):
         if isinstance(value, cabc.MutableMapping) and "type" not in value:
             value = {**value, "type": "particle_psd"}
         return atmosphere_factory.convert(value, allowed_cls=cls)
-
-    profile: ParticleProfile = documented(
-        attrs.field(kw_only=True, converter=ParticleProfile.convert),
-        doc="Dense volumetric cloud profile, in the "
-        ":ref:`Pfd-Core v1 <sec-data-formats-pfd_core_v1>` format. "
-        "This parameter has no default.",
-        type="ParticleProfile",
-        init_type="ParticleProfile or Dataset or path-like",
-    )
-
-    properties: ParticleProperties = documented(
-        attrs.field(kw_only=True, converter=ParticleProperties.convert),
-        doc="Particle properties, in the "
-        ":ref:`Prt v1 <sec-data-formats-prt_v1>` format. "
-        "This parameter has no default.",
-        type="ParticleProperties",
-        init_type="ParticleProperties or Dataset or path-like or str",
-    )
-
-    @properties.validator
-    def _properties_validator(self, attribute, value):
-        if not value.has_size_distribution:
-            raise ValueError(
-                "While initialising ParticlePSDComponent: 'properties' must have "
-                "'reff'/'veff' dimensions (a Prt v1 dataset)"
-            )
-
-    has_absorption: bool = documented(
-        attrs.field(default=True, converter=bool, kw_only=True),
-        doc="If ``True``, the medium contributes an absorption coefficient.",
-        type="bool",
-        init_type="bool",
-        default="True",
-    )
-
-    has_scattering: bool = documented(
-        attrs.field(default=True, converter=bool, kw_only=True),
-        doc="If ``True``, the medium contributes a scattering coefficient.",
-        type="bool",
-        init_type="bool",
-        default="True",
-    )
-
-    _phase: GriddedParticlePhaseFunction = None
 
     # --------------------------------------------------------------------------
     #                       Profile and properties access

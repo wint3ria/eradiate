@@ -337,21 +337,11 @@ def test_eval_family_values(has_absorption, has_scattering, expected):
 
 
 def test_eval_family_no_absorption_no_scattering():
-    """sigma_t/albedo/mfp raise, but sigma_s/sigma_a return zero, when both are disabled."""
-    psd = make_particle_psd_component(
-        w=(1.0,), has_absorption=False, has_scattering=False
-    )
-    si = MonoSpectralIndex(w=ureg.Quantity(1.0, "micron"))
-
-    with pytest.raises(RuntimeError, match="At least one"):
-        psd.eval_sigma_t(si)
-    with pytest.raises(RuntimeError, match="At least one"):
-        psd.eval_albedo(si)
-    with pytest.raises(RuntimeError, match="At least one"):
-        psd.eval_mfp(KernelContext(si=si))
-
-    np.testing.assert_allclose(psd.eval_sigma_s(si).m_as("1/km"), 0.0)
-    np.testing.assert_allclose(psd.eval_sigma_a(si).m_as("1/km"), 0.0)
+    """Disabling both has_absorption and has_scattering raises at construction."""
+    with pytest.raises(ValueError, match="at least one"):
+        make_particle_psd_component(
+            w=(1.0,), has_absorption=False, has_scattering=False
+        )
 
 
 def test_eval_sigma_t_outside_cloud():
