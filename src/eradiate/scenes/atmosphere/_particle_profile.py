@@ -191,7 +191,6 @@ class ParticleProfile:
 
         return self._resample_regular_impl(grid)
 
-
     @cache_by_id
     def _resample_regular_impl(self, grid: SpatialGrid) -> ParticleProfile:
 
@@ -226,7 +225,6 @@ class ParticleProfile:
             )
 
         return self._resample_z(grid, x_grid_edges, y_grid_edges)
-
 
     def _resample_z(
         self,

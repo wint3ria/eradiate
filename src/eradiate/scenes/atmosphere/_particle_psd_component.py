@@ -166,7 +166,7 @@ class ParticlePSDComponent(AbstractHeterogeneousAtmosphere):
         ----------
         si : :class:`.SpectralIndex`
             Spectral index at which to evaluate.
-        
+
         grid : :class:`.SpatialGrid`, optional
             Target render grid.  Defaults to ``self.geometry.grid``.
 
@@ -211,7 +211,7 @@ class ParticlePSDComponent(AbstractHeterogeneousAtmosphere):
         ----------
         si : :class:`.SpectralIndex`
             Spectral index at which to evaluate.
-        
+
         grid : :class:`.SpatialGrid`, optional
             Target render grid.  Defaults to ``self.geometry.grid``.
 
@@ -234,9 +234,7 @@ class ParticlePSDComponent(AbstractHeterogeneousAtmosphere):
 
             mass_concentration = to_quantity(resampled.data["mass_concentration"])
             albedo_da = resampled.interp_reff_veff(ssa_grid)
-            albedo_m = np.where(
-                mass_concentration.m > 0, to_quantity(albedo_da).m, 0.0
-            )
+            albedo_m = np.where(mass_concentration.m > 0, to_quantity(albedo_da).m, 0.0)
 
             albedo_values = np.transpose(albedo_m, (2, 1, 0))  # (z,y,x)->(x,y,z)
             return ureg.Quantity(albedo_values, ureg.dimensionless)
@@ -260,7 +258,7 @@ class ParticlePSDComponent(AbstractHeterogeneousAtmosphere):
         ----------
         si : :class:`.SpectralIndex`
             Spectral index at which to evaluate.
-        
+
         grid : :class:`.SpatialGrid`, optional
             Target render grid.  Defaults to ``self.geometry.grid``.
 
@@ -289,7 +287,7 @@ class ParticlePSDComponent(AbstractHeterogeneousAtmosphere):
         ----------
         si : :class:`.SpectralIndex`
             Spectral index at which to evaluate.
-        
+
         grid : :class:`.SpatialGrid`, optional
             Target render grid.  Defaults to ``self.geometry.grid``.
 
@@ -455,10 +453,13 @@ class ParticlePSDComponent(AbstractHeterogeneousAtmosphere):
         resampled_profile = particle_psd_component.profile.resample_regular(grid).data
 
         sizes = resampled_profile.sizes
-        in_bounds = 0 <= ix < sizes["x"] and 0 <= iy < sizes["y"] and 0 <= iz < sizes["z"]
-        has_cloud = in_bounds and float(
-            resampled_profile["mass_concentration"].values[iz, iy, ix]
-        ) > 0.0
+        in_bounds = (
+            0 <= ix < sizes["x"] and 0 <= iy < sizes["y"] and 0 <= iz < sizes["z"]
+        )
+        has_cloud = (
+            in_bounds
+            and float(resampled_profile["mass_concentration"].values[iz, iy, ix]) > 0.0
+        )
         if not has_cloud:
             raise ValueError(f"No cloud voxel found at ({ix}, {iy}, {iz}).")
 
@@ -697,9 +698,7 @@ class ParticlePSDComponent(AbstractHeterogeneousAtmosphere):
         # (x, y, z) -> (z, y, x)
         mass_concentration_zyx = np.transpose(mass_concentration_grid.m, (2, 1, 0))
         reff_zyx = np.full_like(mass_concentration_zyx, reff.m_as(ureg.micron))
-        veff_zyx = np.full_like(
-            mass_concentration_zyx, veff.m_as(ureg.dimensionless)
-        )
+        veff_zyx = np.full_like(mass_concentration_zyx, veff.m_as(ureg.dimensionless))
 
         level_units = {"units": "kilometer"}
         profile_ds = xr.Dataset(
@@ -758,7 +757,7 @@ class ParticlePSDComponent(AbstractHeterogeneousAtmosphere):
             ext=m_extinction.reshape(1, 1, 1),
             ssa=albedo_at_wref.reshape(1, 1, 1),
             phase=ureg.Quantity(
-                phase_compact.reshape(n_phamat, 1, 1, 1, n_theta), ureg.steradians ** -1
+                phase_compact.reshape(n_phamat, 1, 1, 1, n_theta), ureg.steradians**-1
             ),
             pmom=np.zeros((1, 1, 1, 1)),
             reff=np.atleast_1d(reff),

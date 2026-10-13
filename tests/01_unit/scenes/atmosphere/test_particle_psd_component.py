@@ -338,7 +338,9 @@ def test_eval_family_values(has_absorption, has_scattering, expected):
 
 def test_eval_family_no_absorption_no_scattering():
     """sigma_t/albedo/mfp raise, but sigma_s/sigma_a return zero, when both are disabled."""
-    psd = make_particle_psd_component(w=(1.0,), has_absorption=False, has_scattering=False)
+    psd = make_particle_psd_component(
+        w=(1.0,), has_absorption=False, has_scattering=False
+    )
     si = MonoSpectralIndex(w=ureg.Quantity(1.0, "micron"))
 
     with pytest.raises(RuntimeError, match="At least one"):
@@ -403,7 +405,9 @@ def test_reff_veff_interpolation_and_clipping():
         ext_value=np.array([2.0, 4.0]).reshape(1, 2, 1),
     )
 
-    psd = ParticlePSDComponent(profile=profile, properties=properties, geometry=geometry)
+    psd = ParticlePSDComponent(
+        profile=profile, properties=properties, geometry=geometry
+    )
     si = MonoSpectralIndex(w=ureg.Quantity(1.0, "micron"))
 
     sigma_t = psd.eval_sigma_t(si).m_as("1/km")
@@ -596,7 +600,9 @@ def test_composition_to_particle_aot_irregular_z(mode_mono):
     """Density is preserved exactly when the source profile has an irregular z-grid."""
     z_levels_src = [0.0, 1.0, 1.5, 4.0]
     target_levels = np.linspace(0.0, 4.0, 9)
-    psd, grid = _make_z_profile_particle_psd_component(z_levels_src, target_levels=target_levels)
+    psd, grid = _make_z_profile_particle_psd_component(
+        z_levels_src, target_levels=target_levels
+    )
     w = ureg.Quantity(1.0, "micron")
     si = MonoSpectralIndex(w=w)
 
@@ -614,7 +620,9 @@ def test_composition_to_particle_aot_irregular_z(mode_mono):
 
 def test_composition_to_particle_aot_zero_density_column(mode_mono):
     """A zero mass_concentration field yields a zero tau_ref particle_aot."""
-    psd = make_particle_psd_component(n_x=2, n_y=1, n_z=2, w=(1.0,), mass_concentration=0.0)
+    psd = make_particle_psd_component(
+        n_x=2, n_y=1, n_z=2, w=(1.0,), mass_concentration=0.0
+    )
     w = ureg.Quantity(1.0, "micron")
 
     part_aot = ParticlePSDComponent.composition_to_particle_aot(
@@ -670,7 +678,9 @@ def test_from_particle_aot_roundtrip(mode_mono):
 
     assert isinstance(component, ParticlePSDComponent)
     np.testing.assert_allclose(component.properties.reff.m_as("micron"), [10.0])
-    np.testing.assert_allclose(component.properties.veff.m_as(ureg.dimensionless), [0.1])
+    np.testing.assert_allclose(
+        component.properties.veff.m_as(ureg.dimensionless), [0.1]
+    )
 
     layer_sigma_t_sum = layer.eval_sigma_t(si_ref).m_as("1/km").sum()
     component_sigma_t = component.eval_sigma_t(si_ref)
@@ -681,7 +691,9 @@ def test_from_particle_aot_roundtrip(mode_mono):
     component_albedo = component.eval_albedo(si_ref)
     mask = component_sigma_t.m > 0
     assert np.any(mask)
-    np.testing.assert_allclose(component_albedo.m_as("dimensionless")[mask], 0.6, rtol=1e-6)
+    np.testing.assert_allclose(
+        component_albedo.m_as("dimensionless")[mask], 0.6, rtol=1e-6
+    )
 
 
 def test_from_particle_aot_custom_grid(mode_mono):
@@ -741,7 +753,9 @@ def test_theta_convention_consistency(mode_mono):
         reff=np.array([10.0]) * ureg.micron,
         veff=np.array([0.1]) * ureg.dimensionless,
     )
-    psd = ParticlePSDComponent(profile=profile, properties=properties, geometry=geometry)
+    psd = ParticlePSDComponent(
+        profile=profile, properties=properties, geometry=geometry
+    )
 
     layer = ParticlePSDComponent.voxel_to_particle_aot(
         psd, w=ureg.Quantity(1.0, "micron"), ix=0, iy=0, iz=0
@@ -811,7 +825,9 @@ def test_multi_reff_veff_ws(mode_mono):
 
     profile = make_profile_dataset(grid, reff=10.0, veff=0.15, mass_concentration=0.5)
 
-    psd = ParticlePSDComponent(profile=profile, properties=properties, geometry=geometry)
+    psd = ParticlePSDComponent(
+        profile=profile, properties=properties, geometry=geometry
+    )
 
     si = MonoSpectralIndex(w=ureg.Quantity(0.8, "micron"))
     shape = (grid.n_cells_x, grid.n_cells_y, grid.n_cells_z)
