@@ -1,11 +1,11 @@
 from __future__ import annotations
+from functools import lru_cache
 from typing import Callable
 
 import attrs
 import mitsuba as mi
 import numpy as np
 import pint
-import pinttrs
 
 from ._core import PhaseFunction
 from .._gridvolume import generate_gridvolume
@@ -14,7 +14,10 @@ from ...attrs import define, documented
 from ...contexts import KernelContext
 from ...kernel import DictParameter, KernelSceneParameterFlags, SceneParameter
 from ...spectral.index import SpectralIndex
-from ...units import unit_context_config as ucc
+from ...units import PhysicalQuantity
+from ...units import unit_context_kernel as uck
+from ...units import unit_registry as ureg
+from ...units import units_compatible
 from ...util.misc import cache_by_id
 
 
@@ -29,81 +32,106 @@ def _validate_increasing_grid_axis(instance, attribute, value):
         raise ValueError(f"'{attribute.name}' must be strictly increasing")
 
 
+@lru_cache(maxsize=None)
+def _kernel_unit_for(units: pint.Unit) -> pint.Unit:
+    """Return the registered kernel-context unit sharing ``units``'s dimensionality."""
+    for kind in PhysicalQuantity:
+        candidate = uck.get(kind)
+        if units_compatible(candidate, units):
+            return candidate
+
+    raise ValueError(f"no kernel unit convention registered for units '{units}'")
+
+
 @define(eq=False, slots=False)
 class GriddedParticlePhaseFunction(PhaseFunction):
     """
-    Phase function for spatially heterogeneous cloud particle PSD components.
+    Phase function for spatially heterogeneous particle components, looked
+    up per voxel from one or two state variables.
 
     Wraps the ``particlefieldphase`` kernel plugin, which performs bilinear
-    interpolation of the phase matrix in the ``(r_eff, v_eff)`` parameter
-    space at each scattering interaction.
+    interpolation of the phase matrix over its two interpolation slots. When
+    only one state variable is used, the second slot is padded with a
+    degenerate, single-point grid, over which interpolation is a no-op.
 
     The phase spectral properties are passed through the ``phase_data``
     callable. This callable returns a dict with the following information:
 
-    * ``mu``: 2D array of shape
-    ``(len(r_eff_grid) * len(v_eff_grid), max_len)``. Each row holds the
-    scattering angle cosine discretization for one combination of an
-    ``r_eff_grid`` value and a ``v_eff_grid`` value, padded with trailing NaN
-    to the widest row's length.
+    * ``mu``: 2D array of shape ``(n_pts, max_len)``, where ``n_pts`` is
+      ``len(grid_1)`` (or ``len(grid_1) * len(grid_2)`` if a second state
+      variable is used). Each row holds the scattering angle cosine
+      discretization for one grid point, padded with trailing NaN to the
+      widest row's length.
     * ``phase``: 3D array of phase function values, shape
-    ``(len(r_eff_grid) * len(v_eff_grid), n_phamat, max_len)``. Contains the
-    tabulated phase function values indexed by ``mu``. It follows the same
-    per-row grid-point ordering and NaN-padding as ``mu``, with an extra
-    middle axis to select the Mueller phase matrix components.
-    * ``ext``: extinction coefficient, shape ``(len(r_eff_grid), len(v_eff_grid))``.
-    * ``ssa``: single-scattering albedo, shape  ``(len(r_eff_grid), len(v_eff_grid))``.
+      ``(n_pts, n_phamat, max_len)``. Contains the tabulated phase function
+      values indexed by ``mu``. It follows the same per-row grid-point
+      ordering and NaN-padding as ``mu``, with an extra middle axis to
+      select the Mueller phase matrix components.
+    * ``ext``: extinction coefficient, shape matching the state variable
+      grid (``(len(grid_1),)`` or ``(len(grid_1), len(grid_2))``).
+    * ``ssa``: single-scattering albedo, same shape as ``ext``.
     * ``max_union_size``: upper bound on the CSR-flattened, cross-spectral
       angular index length built from ``mu``.
     """
 
-    r_eff_volume: Callable[[KernelContext], pint.Quantity] = documented(
+    volume_1: pint.Quantity = documented(
         attrs.field(kw_only=True),
-        doc="Callable that returns a dense ``(n_x, n_y, n_z)`` quantity of "
-        "effective radius values (length units) on the render grid for a "
-        "given kernel context. NaN marks empty cells.",
-        type="callable",
+        doc="Dense ``(n_x, n_y, n_z)`` quantity of the first state "
+        "variable on the render grid. NaN marks empty cells.",
+        type="quantity",
     )
 
-    v_eff_volume: Callable[[KernelContext], pint.Quantity] = documented(
-        attrs.field(kw_only=True),
-        doc="Callable that returns a dense ``(n_x, n_y, n_z)`` quantity of "
-        "effective variance values (dimensionless) on the render grid for "
-        "a given kernel context. NaN marks empty cells.",
-        type="callable",
-    )
-
-    r_eff_grid: pint.Quantity = documented(
-        pinttrs.field(
-            kw_only=True,
-            units=ucc.deferred("length"),
-            validator=[
-                pinttrs.validators.has_compatible_units,
-                _validate_increasing_grid_axis,
-            ],
-        ),
-        doc="Strictly increasing 1-D array of effective radius values.\n"
-        "\n"
-        "Unit-enabled field (default: ucc[length]).",
+    grid_1: pint.Quantity = documented(
+        attrs.field(kw_only=True, validator=_validate_increasing_grid_axis),
+        doc="Strictly increasing 1-D array of values for the first state "
+        "variable. Must have units compatible with :attr:`volume_1`.",
         type="quantity",
         init_type="array-like or quantity",
     )
 
-    v_eff_grid: pint.Quantity = documented(
-        pinttrs.field(
-            kw_only=True,
-            units=ucc.deferred("dimensionless"),
-            validator=[
-                pinttrs.validators.has_compatible_units,
-                _validate_increasing_grid_axis,
-            ],
-        ),
-        doc="Strictly increasing 1-D array of effective variance values.\n"
-        "\n"
-        "Unit-enabled field (default: ucc[dimensionless]).",
-        type="quantity",
-        init_type="array-like or quantity",
+    @grid_1.validator
+    def _validate_grid_1_volume_1(self, attribute, value):
+        if not units_compatible(self.volume_1.units, value.units):
+            raise ValueError(
+                "'grid_1' and 'volume_1' must have compatible units, got "
+                f"'{value.units}' and '{self.volume_1.units}'"
+            )
+
+    volume_2: pint.Quantity | None = documented(
+        attrs.field(kw_only=True, default=None),
+        doc="Dense ``(n_x, n_y, n_z)`` quantity of the second state "
+        "variable on the render grid, if any. NaN marks empty cells.",
+        type="quantity or None",
+        init_type="quantity, optional",
+        default="None",
     )
+
+    grid_2: pint.Quantity | None = documented(
+        attrs.field(
+            kw_only=True,
+            default=None,
+            validator=attrs.validators.optional(_validate_increasing_grid_axis),
+        ),
+        doc="Strictly increasing 1-D array of values for the second state "
+        "variable, if any. Must be set iff :attr:`volume_2` is set, with "
+        "compatible units.",
+        type="quantity or None",
+        init_type="array-like or quantity, optional",
+        default="None",
+    )
+
+    @grid_2.validator
+    def _validate_grid_2_volume_2(self, attribute, value):
+        if (value is None) != (self.volume_2 is None):
+            raise ValueError("'grid_2' and 'volume_2' must be both set or both unset")
+
+        if value is not None and not units_compatible(
+            self.volume_2.units, value.units
+        ):
+            raise ValueError(
+                "'grid_2' and 'volume_2' must have compatible units, got "
+                f"'{value.units}' and '{self.volume_2.units}'"
+            )
 
     phase_data: Callable[[SpectralIndex], dict] = documented(
         attrs.field(kw_only=True),
@@ -116,10 +144,21 @@ class GriddedParticlePhaseFunction(PhaseFunction):
     geometry: SceneGeometry = documented(
         attrs.field(kw_only=True),
         doc="Geometry describing the render grid on which "
-        "``r_eff_volume`` and ``v_eff_volume`` are evaluated when "
-        "generating the kernel gridvolumes.",
+        "``volume_1`` and ``volume_2`` are defined.",
         type="SceneGeometry",
     )
+
+    def _grid_2_or_default(self) -> pint.Quantity:
+        """Return :attr:`grid_2`, or a degenerate single-point placeholder."""
+        if self.grid_2 is not None:
+            return self.grid_2
+        return ureg.Quantity([0.0], ureg.dimensionless)
+
+    def _volume_2_or_default(self) -> pint.Quantity:
+        """Return :attr:`volume_2`, or a degenerate constant placeholder."""
+        if self.volume_2 is not None:
+            return self.volume_2
+        return ureg.Quantity(0.0, ureg.dimensionless)
 
     @cache_by_id
     def _build_phase_parameters(self, si: SpectralIndex) -> dict:
@@ -202,26 +241,27 @@ class GriddedParticlePhaseFunction(PhaseFunction):
 
     @property
     def template(self) -> dict:
+        grid_2 = self._grid_2_or_default()
+        volume_2 = self._volume_2_or_default()
+        unit_1 = _kernel_unit_for(self.grid_1.units)
+        unit_2 = _kernel_unit_for(grid_2.units)
+
         return {
             "type": "particlephase",
             "r_eff_volume": generate_gridvolume(
                 self.geometry,
-                self.r_eff_volume,
-                units=self.r_eff_grid.units,
+                lambda ctx: self.volume_1,
+                units=unit_1,
                 dtype=np.float64,
             ),
             "v_eff_volume": generate_gridvolume(
                 self.geometry,
-                self.v_eff_volume,
-                units=self.v_eff_grid.units,
+                lambda ctx: volume_2,
+                units=unit_2,
                 dtype=np.float64,
             ),
-            "r_eff_grid": mi.TensorXf(
-                self.r_eff_grid.m_as(self.r_eff_grid.units).reshape(-1, 1)
-            ),
-            "v_eff_grid": mi.TensorXf(
-                self.v_eff_grid.m_as(self.v_eff_grid.units).reshape(-1, 1)
-            ),
+            "r_eff_grid": mi.TensorXf(self.grid_1.m_as(unit_1).reshape(-1, 1)),
+            "v_eff_grid": mi.TensorXf(grid_2.m_as(unit_2).reshape(-1, 1)),
             "nodes": DictParameter(self._eval_param("nodes")),
             "phase_mueller": DictParameter(self._eval_param("phase_mueller")),
             "grid_start": DictParameter(self._eval_param("grid_start")),
