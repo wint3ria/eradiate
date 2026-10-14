@@ -71,6 +71,11 @@ atmosphere_factory.register_lazy_batch(
             {},
         ),
         (
+            "_particle_psd_component.ParticleStateComponent",
+            "particle_state",
+            {},
+        ),
+        (
             "_particle_psd_component.ParticlePSDComponent",
             "particle_psd",
             {},

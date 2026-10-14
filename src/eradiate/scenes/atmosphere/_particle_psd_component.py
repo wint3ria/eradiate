@@ -92,6 +92,21 @@ class ParticleStateComponent(ParticleComponent):
       layer outside its extent.
     """
 
+    @classmethod
+    def convert(cls, value: Any) -> ParticleStateComponent:
+        """
+        Conversion logic:
+
+        * If value is a ParticleStateComponent instance, return it unchanged.
+        * If value is a dictionary, it is interpreted by
+          :data:`.atmosphere_factory`; the ``"type"`` parameter may be
+          omitted and will automatically be set to ``"particle_state"``.
+        * Otherwise, the value is returned unchanged.
+        """
+        if isinstance(value, cabc.MutableMapping) and "type" not in value:
+            value = {**value, "type": "particle_state"}
+        return atmosphere_factory.convert(value, allowed_cls=cls)
+
     profile: ParticleProfile = documented(
         attrs.field(kw_only=True, converter=ParticleProfile.convert),
         doc="Dense volumetric state profile, in the "
