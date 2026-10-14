@@ -24,7 +24,7 @@ from ..core import traverse
 from ..geometry import PlaneParallelGeometry
 from ..phase import GriddedParticlePhaseFunction
 from ...attrs import define, documented, get_doc
-from ...data.convert import make_prt_cloud_v1
+from ...data.convert import make_prt_psd_v1
 from ...grid import SpatialGrid, CartesianGrid
 from ...kernel import SceneParameter
 from ...radprops._particles import ParticleProperties
@@ -110,7 +110,7 @@ class ParticleStateComponent(ParticleComponent):
     profile: ParticleProfile = documented(
         attrs.field(kw_only=True, converter=ParticleProfile.convert),
         doc="Dense volumetric state profile, in the "
-        ":ref:`Psd-Core v1 <sec-data-formats-psd_core_v1>` format. "
+        ":ref:`Pfd-Core v1 <sec-data-formats-pfd_core_v1>` format. "
         "This parameter has no default.",
         type="ParticleProfile",
         init_type="ParticleProfile or Dataset or path-like",
@@ -119,7 +119,7 @@ class ParticleStateComponent(ParticleComponent):
     properties: ParticleProperties = documented(
         attrs.field(kw_only=True, converter=ParticleProperties.convert),
         doc="Particle properties, in the "
-        ":ref:`Prt v1 <sec-data-formats-prt_v1>` format. "
+        ":ref:`Prt-psd v1 <sec-data-formats-prt_psd_v1>` format. "
         "This parameter has no default.",
         type="ParticleProperties",
         init_type="ParticleProperties or Dataset or path-like or str",
@@ -537,10 +537,10 @@ class ParticlePSDComponent(ParticleStateComponent):
     and variance (``veff``). The amount of the species is described by a
     mass concentration (``mass_concentration``).
 
-    The particle PSD component is defined by a dense volumetric *profile*
+    The particle component is defined by a dense volumetric *profile*
     (per-voxel microphysical properties, in the
-    :ref:`Psd-Core v1 <sec-data-formats-psd_core_v1>` format) and particle
-    properties (in the :ref:`Prt v1 <sec-data-formats-prt_v1>` format).
+    :ref:`Pfd-core v1 <sec-data-formats-pfd_core_v1>` format) and particle
+    properties (in the :ref:`Prt-Psd v1 <sec-data-formats-prt_psd_v1>` format).
     """
 
     amount: str | None = documented(
@@ -923,7 +923,7 @@ class ParticlePSDComponent(ParticleStateComponent):
         n_theta = len(theta_sorted)
         n_phamat = phase_compact.shape[0]
 
-        properties = make_prt_cloud_v1(
+        properties = make_prt_psd_v1(
             w=np.atleast_1d(w_ref),
             phamat=list(pp.data["phamat"].values),
             mu=ureg.Quantity(
