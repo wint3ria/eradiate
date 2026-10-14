@@ -418,11 +418,11 @@ def test_phase_returns_particle_phase():
     assert isinstance(phase, GriddedParticlePhaseFunction)
 
     np.testing.assert_allclose(
-        phase.r_eff_grid.m_as("micron"),
+        phase.grid_1.m_as("micron"),
         psd.properties.reff.m_as("micron").astype(np.float64),
     )
     np.testing.assert_allclose(
-        phase.v_eff_grid.m_as(ureg.dimensionless),
+        phase.grid_2.m_as(ureg.dimensionless),
         psd.properties.veff.m_as(ureg.dimensionless).astype(np.float64),
     )
 
@@ -459,8 +459,13 @@ def test_eval_phase_data_matches_grid_evals():
 
     np.testing.assert_allclose(data["mu"], expected_mu)
     np.testing.assert_allclose(data["phase"], expected_phase)
-    np.testing.assert_allclose(data["ext"], expected_ext.values)
-    np.testing.assert_allclose(data["ssa"], expected_ssa.values)
+    ext_unit = ureg.km**-1 / (ureg.gram / ureg.meter**3)
+    np.testing.assert_allclose(
+        data["ext"].m_as(ext_unit), expected_ext.m_as(ext_unit)
+    )
+    np.testing.assert_allclose(
+        data["ssa"].m_as(ureg.dimensionless), expected_ssa.m_as(ureg.dimensionless)
+    )
     assert data["max_union_size"] == psd.properties.max_union_size
 
 

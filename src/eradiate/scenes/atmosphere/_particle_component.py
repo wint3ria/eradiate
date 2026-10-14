@@ -61,6 +61,8 @@ class ParticleComponent(AbstractHeterogeneousAtmosphere):
         * If value is a dictionary, it is interpreted by
           :data:`.atmosphere_factory`; the ``"type"`` parameter may be
           omitted and will automatically be set to ``"particle_aot"``.
+          Other types, e.g. ``"particle_psd"``, must set ``"type"``
+          explicitly.
         * Otherwise, the value is returned unchanged.
         """
         if isinstance(value, cabc.MutableMapping) and "type" not in value:

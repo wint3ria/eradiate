@@ -78,6 +78,41 @@ class TestConstruction:
             ParticleProfile(data=ds)
 
 
+class TestVariablesAndGetitem:
+    @pytest.fixture
+    def profile(self) -> ParticleProfile:
+        return ParticleProfile(
+            data=make_profile_dataset(
+                reff=10.0,
+                veff=0.1,
+                mass_concentration=1e-3,
+                x_levels=[0.0, 1.0],
+                y_levels=[0.0, 1.0],
+                z_levels=[0.0, 1.0],
+            )
+        )
+
+    def test_variables_excludes_structural(self, profile):
+        """variables lists non-structural data_vars only."""
+        assert set(profile.variables) == {"reff", "veff", "mass_concentration"}
+
+    def test_getitem_matches_named_property(self, profile):
+        """profile[name] returns the same cached value as the matching property."""
+        assert profile["reff"] is profile.reff
+        assert profile["veff"] is profile.veff
+        assert profile["mass_concentration"] is profile.mass_concentration
+
+    def test_getitem_rejects_structural_variable(self, profile):
+        """profile[name] raises for a structural (x/y/z_levels) variable."""
+        with pytest.raises(KeyError, match="x_levels"):
+            profile["x_levels"]
+
+    def test_getitem_rejects_unknown_variable(self, profile):
+        """profile[name] raises for a name that isn't a profile variable at all."""
+        with pytest.raises(KeyError, match="nonexistent"):
+            profile["nonexistent"]
+
+
 class TestResampleRegular:
     @pytest.fixture
     def profile(self) -> ParticleProfile:

@@ -15,6 +15,7 @@ from typing import Any
 import attrs
 import numpy as np
 import pint
+import scipy.interpolate
 import xarray as xr
 
 from ...attrs import define, documented
@@ -121,6 +122,18 @@ class ParticleProfile:
             )
 
     @property
+    def variables(self) -> tuple[str, ...]:
+        """
+        Returns
+        -------
+        tuple[str, ...]
+            Names of this profile's non-structural variables (``x_levels``,
+            ``y_levels`` and ``z_levels`` excluded).
+        """
+        structural = {"x_levels", "y_levels", "z_levels"}
+        return tuple(v for v in self.data.data_vars if v not in structural)
+
+    @property
     def reff(self) -> pint.Quantity:
         """
         Returns
@@ -155,6 +168,58 @@ class ParticleProfile:
         if self._mass_concentration is None:
             self._mass_concentration = to_quantity(self.data["mass_concentration"])
         return self._mass_concentration
+
+    def __getitem__(self, name: str) -> pint.Quantity:
+        """Return the per-voxel quantity for a non-structural variable."""
+        if name not in self.variables:
+            raise KeyError(f"'{name}' is not a variable of this profile: {self.variables}")
+        return getattr(self, name)
+
+    def interp(
+        self,
+        grid: ureg.Quantity,
+        grid_coords: dict[str, ureg.Quantity],
+        binding: dict[str, str],
+    ) -> ureg.Quantity:
+        """
+        Interpolate ``grid``, indexed by ``grid_coords``'s dimension names,
+        at this profile's per-voxel values for the variables ``binding``
+        maps those dimensions to. Query points are clipped to each
+        dimension's own coordinate range.
+        """
+        spatial_shape = tuple(self.data.sizes[d] for d in ("z", "y", "x"))
+        dims = list(grid_coords)
+
+        values = grid.m
+        squeeze_axes = []
+        points = []
+        query = []
+
+        for axis, d in enumerate(dims):
+            grid_vals_q = grid_coords[d]
+            if values.shape[axis] == 1:
+                squeeze_axes.append(axis)
+                continue
+
+            grid_vals = grid_vals_q.m
+            points.append(grid_vals)
+
+            q = self[binding[d]].m_as(grid_vals_q.units)
+            query.append(np.clip(q, grid_vals.min(), grid_vals.max()))
+
+        if squeeze_axes:
+            values = values.squeeze(axis=tuple(squeeze_axes))
+
+        if not points:
+            result = np.broadcast_to(values, spatial_shape)
+        else:
+            interpolator = scipy.interpolate.RegularGridInterpolator(
+                points, values, method="linear"
+            )
+            query_points = np.stack([q.ravel() for q in query], axis=-1)
+            result = interpolator(query_points).reshape(spatial_shape)
+
+        return ureg.Quantity(result, grid.units)
 
     @staticmethod
     def _check_regular(name: str, values: pint.Quantity) -> None:

@@ -219,7 +219,7 @@ class GriddedParticlePhaseFunction(PhaseFunction):
                 [mueller_raw, np.full((n_pad, mueller_raw.shape[-1]), np.nan)]
             )
 
-        sigma_s_weight = ext * ssa
+        sigma_s_weight = (ext * ssa).m
 
         return {
             "nodes": mi.TensorXf(nodes.reshape(-1, 1)),

@@ -33,6 +33,7 @@ from ...contexts import KernelContext
 from ...units import to_quantity
 from ...units import unit_registry as ureg
 from ...units import unit_context_kernel as uck
+from ...units import units_compatible
 from ...util.misc import cache_by_id
 
 
@@ -59,10 +60,13 @@ class ParticleStateComponent(ParticleComponent):
 
     @properties.validator
     def _properties_validator(self, attribute, value):
-        if not value.has_size_distribution:
+        missing = [
+            d for d in self.state_dims if self._binding[d] not in self.profile.variables
+        ]
+        if missing:
             raise ValueError(
-                "While initialising ParticlePSDComponent: 'properties' must have "
-                "'reff'/'veff' dimensions (a Prt v1 dataset)"
+                f"'profile' has no variable for state dimension(s) {missing} "
+                f"(expected {[self._binding[d] for d in missing]})"
             )
 
     amount: str | None = documented(
@@ -100,6 +104,148 @@ class ParticleStateComponent(ParticleComponent):
 
     _phase: GriddedParticlePhaseFunction = None
 
+    @property
+    def state_dims(self) -> tuple[str, ...]:
+        """
+        Returns
+        -------
+        tuple[str, ...]
+            Names of :attr:`properties`' state dimensions: its ``ext``
+            variable's dimensions, excluding ``w``, ``phamat``, ``iangle``
+            and ``imom``.
+        """
+        non_state = {"w", "phamat", "iangle", "imom"}
+        return tuple(d for d in self.properties.data["ext"].dims if d not in non_state)
+
+    @property
+    def _binding(self) -> dict[str, str]:
+        """
+        Returns
+        -------
+        dict[str, str]
+            Mapping from each of :attr:`state_dims` to the profile
+            variable supplying its per-voxel value, defaulting to a
+            same-named variable when not listed in :attr:`state_variables`.
+        """
+        return {d: self.state_variables.get(d, d) for d in self.state_dims}
+
+    @property
+    def _amount(self) -> str:
+        """
+        Returns
+        -------
+        str
+            Name of the profile variable that scales the per-unit-amount
+            extinction: :attr:`amount` if set, otherwise the unique
+            profile variable whose units make ``amount * ext`` an
+            inverse length.
+        """
+        if self.amount is not None:
+            return self.amount
+
+        ext_units = self.properties.ext.units
+        exclude = set(self._binding.values())
+
+        matches = [
+            name
+            for name in self.profile.variables
+            if name not in exclude
+            and units_compatible(self.profile[name].units * ext_units, 1 / ureg.m)
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"cannot select amount variable unambiguously: candidates {matches}"
+            )
+        return matches[0]
+
+    @cache_by_id
+    def _eval_ext_ssa_grid(self, si: SpectralIndex) -> tuple[ureg.Quantity, ureg.Quantity]:
+        """
+        Evaluate ``ext``/``ssa`` at ``si.w``, over the whole state-variable
+        grid (no per-voxel resolution). Axis order matches :attr:`state_dims`.
+        """
+        pp = self.properties
+        w = np.atleast_1d(si.w)
+        return pp.eval_ext(w)[0], pp.eval_ssa(w)[0]
+
+    def _interp_state(
+        self, grid: ureg.Quantity, resampled: ParticleProfile
+    ) -> ureg.Quantity:
+        """
+        Interpolate a state-variable-indexed ``grid`` (as returned by
+        :meth:`_eval_ext_ssa_grid`) at ``resampled``'s per-voxel state
+        values, clipped to ``grid``'s coordinate range along each state
+        dimension.
+        """
+        grid_coords = {
+            d: to_quantity(self.properties.data[d]) for d in self.state_dims
+        }
+        return resampled.interp(grid, grid_coords, self._binding)
+
+    @cache_by_id
+    def _eval_phase_data(self, si: SpectralIndex) -> dict:
+        """
+        Build the dict expected by :class:`.GriddedParticlePhaseFunction`'s
+        ``phase_data`` callable: ``mu``/``phase`` flattened to one row per
+        state-dimension combination, combined with :meth:`_eval_ext_ssa_grid`.
+        """
+        state_shape = tuple(self.properties.data.sizes[d] for d in self.state_dims)
+        n_pts = int(np.prod(state_shape)) if state_shape else 1
+
+        mu, phase = self.properties.eval_phase(si.w)
+        n_phamat, *_, max_len = phase.shape
+        mu = mu.reshape(n_pts, max_len)
+        phase = phase.reshape(n_phamat, n_pts, max_len).transpose(1, 0, 2)
+
+        ext_grid, ssa_grid = self._eval_ext_ssa_grid(si)
+        return {
+            "mu": mu,
+            "phase": phase,
+            "ext": ext_grid,
+            "ssa": ssa_grid,
+            "max_union_size": self.properties.max_union_size,
+        }
+
+    @property
+    def phase(self) -> GriddedParticlePhaseFunction:
+        if self._phase:
+            return self._phase
+
+        grid = self.geometry.grid
+        resampled = self.profile.resample_regular(grid)
+        amount = resampled[self._amount]
+        empty = amount.m <= 0
+
+        volumes = []
+        grids = []
+        for d in self.state_dims:
+            value = resampled[self._binding[d]]
+            volume_zyx = np.where(empty, np.nan, value.m)
+            volumes.append(np.transpose(volume_zyx, (2, 1, 0)) * value.units)
+            grids.append(to_quantity(self.properties.data[d]))
+
+        kwargs = {
+            "geometry": self.geometry,
+            "phase_data": self._eval_phase_data,
+            "volume_1": volumes[0],
+            "grid_1": grids[0],
+        }
+        if len(volumes) > 1:
+            kwargs["volume_2"] = volumes[1]
+            kwargs["grid_2"] = grids[1]
+
+        return GriddedParticlePhaseFunction(**kwargs)
+
+    @property
+    def _template_phase(self) -> dict:
+        result, _ = traverse(self.phase)
+        return result.data
+
+    @property
+    def _params_phase(self) -> dict[str, SceneParameter]:
+        _, result = traverse(self.phase)
+        return result.data
+
 
 @define(eq=False, slots=False)
 class ParticlePSDComponent(ParticleStateComponent):
@@ -124,6 +270,10 @@ class ParticlePSDComponent(ParticleStateComponent):
     * The render grid must be contained within the z-extent of the profile.
     """
 
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("state_variables", {"reff": "reff", "veff": "veff"})
+        self.__attrs_init__(*args, **kwargs)
+
     @classmethod
     def convert(cls, value: Any) -> ParticlePSDComponent:
         """
@@ -138,40 +288,6 @@ class ParticlePSDComponent(ParticleStateComponent):
         if isinstance(value, cabc.MutableMapping) and "type" not in value:
             value = {**value, "type": "particle_psd"}
         return atmosphere_factory.convert(value, allowed_cls=cls)
-
-    # --------------------------------------------------------------------------
-    #                       Profile and properties access
-    # --------------------------------------------------------------------------
-
-    @cache_by_id
-    def _eval_ext_ssa_grid(
-        self, si: SpectralIndex
-    ) -> tuple[xr.DataArray, xr.DataArray]:
-        """
-        Evaluate ``ext``/``ssa`` at ``si.w``, over the whole ``(reff, veff)``
-        properties grid (no per-voxel resolution).
-        """
-        pp = self.properties
-        w = np.atleast_1d(si.w)
-
-        ext = pp.eval_ext(w)[0]
-        ssa = pp.eval_ssa(w)[0]
-
-        coords = {
-            "reff": ("reff", pp.reff.m_as(ureg.micron), {"units": "micron"}),
-            "veff": (
-                "veff",
-                pp.veff.m_as(ureg.dimensionless),
-                {"units": "dimensionless"},
-            ),
-        }
-        ext_da = xr.DataArray(
-            ext.m, dims=["reff", "veff"], coords=coords, attrs={"units": str(ext.units)}
-        )
-        ssa_da = xr.DataArray(
-            ssa.m, dims=["reff", "veff"], coords=coords, attrs={"units": str(ssa.units)}
-        )
-        return ext_da, ssa_da
 
     # --------------------------------------------------------------------------
     #                       Radiative properties
@@ -214,13 +330,13 @@ class ParticlePSDComponent(ParticleStateComponent):
         resampled = self.profile.resample_regular(grid)
         ext_grid, _ = self._eval_ext_ssa_grid(si)
 
-        mass_concentration = to_quantity(resampled.data["mass_concentration"])
-        m_extinction = resampled.interp_reff_veff(ext_grid)
-        extinction = (to_quantity(m_extinction) * mass_concentration).to(col_units)
+        amount = resampled[self._amount]
+        m_extinction = self._interp_state(ext_grid, resampled)
+        extinction = (m_extinction * amount).to(col_units)
 
-        extinction_values = np.where(mass_concentration.m > 0, extinction.m, 0.0)
+        extinction_values = np.where(amount.m > 0, extinction.m, 0.0)
         sigma_t_values = np.transpose(extinction_values, (2, 1, 0))  # (z,y,x)->(x,y,z)
-        return ureg.Quantity(sigma_t_values, col_units)
+        return sigma_t_values * col_units
 
     def eval_albedo(
         self, si: SpectralIndex, grid: SpatialGrid | None = None
@@ -253,12 +369,12 @@ class ParticlePSDComponent(ParticleStateComponent):
             resampled = self.profile.resample_regular(grid)
             _, ssa_grid = self._eval_ext_ssa_grid(si)
 
-            mass_concentration = to_quantity(resampled.data["mass_concentration"])
-            albedo_da = resampled.interp_reff_veff(ssa_grid)
-            albedo_m = np.where(mass_concentration.m > 0, to_quantity(albedo_da).m, 0.0)
+            amount = resampled[self._amount]
+            albedo = self._interp_state(ssa_grid, resampled)
+            albedo_m = np.where(amount.m > 0, albedo.m, 0.0)
 
             albedo_values = np.transpose(albedo_m, (2, 1, 0))  # (z,y,x)->(x,y,z)
-            return ureg.Quantity(albedo_values, ureg.dimensionless)
+            return albedo_values * ureg.dimensionless
 
         if self.has_absorption:
             return ureg.Quantity(0.0, ureg.dimensionless)
@@ -336,57 +452,6 @@ class ParticlePSDComponent(ParticleStateComponent):
         min_sigma_s = self.eval_sigma_s(ctx.si).min(axis=-1)
         with np.errstate(divide="ignore"):
             return 1.0 / min_sigma_s
-
-    @cache_by_id
-    def _eval_phase_data(self, si: SpectralIndex) -> dict:
-        """
-        Build the dict expected by :class:`.GriddedParticlePhaseFunction`'s
-        ``phase_data`` callable: ``mu``/``phase`` flattened to one row per
-        ``(reff, veff)`` pair, combined with :meth:`_eval_ext_ssa_grid`.
-        """
-        n_reff, n_veff = self.properties.reff.size, self.properties.veff.size
-        mu, phase = self.properties.eval_phase(si.w)
-        n_phamat, _, _, max_len = phase.shape
-        mu = mu.reshape(n_reff * n_veff, max_len)
-        phase = phase.reshape(n_phamat, n_reff * n_veff, max_len).transpose(1, 0, 2)
-
-        ext_grid, ssa_grid = self._eval_ext_ssa_grid(si)
-        return {
-            "mu": mu,
-            "phase": phase,
-            "ext": ext_grid.values,
-            "ssa": ssa_grid.values,
-            "max_union_size": self.properties.max_union_size,
-        }
-
-    @property
-    def phase(self) -> GriddedParticlePhaseFunction:
-        if self._phase:
-            return self._phase
-
-        grid = self.geometry.grid
-        reff_volume, veff_volume = self.profile.resample_regular(
-            grid
-        ).to_reff_veff_volumes()
-        pp = self.properties
-        return GriddedParticlePhaseFunction(
-            geometry=self.geometry,
-            r_eff_volume=lambda ctx: reff_volume,
-            v_eff_volume=lambda ctx: veff_volume,
-            r_eff_grid=pp.reff,
-            v_eff_grid=pp.veff,
-            phase_data=self._eval_phase_data,
-        )
-
-    @property
-    def _template_phase(self) -> dict:
-        result, _ = traverse(self.phase)
-        return result.data
-
-    @property
-    def _params_phase(self) -> dict[str, SceneParameter]:
-        _, result = traverse(self.phase)
-        return result.data
 
     # --------------------------------------------------------------------------
     #                       Profile-aligned geometry
