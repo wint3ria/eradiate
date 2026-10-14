@@ -47,8 +47,8 @@ class ParticleStateComponent(ParticleComponent):
     ``properties`` at each location. The ``properties`` defines the mapping
     from state variables to optical properties such as extinction, albedo and
     phase function. This class is typically used for complex particle
-    properties varying in space, such as clouds. When evaluated, the profile is
-    resampled onto the render grid.
+    properties varying in space, such as clouds. When evaluated, the 
+    ``profile`` is resampled onto the render grid.
 
     The ``amount`` is a special state variable treated separately. It defines
     the density of the current species at the location. It is used only for
@@ -63,22 +63,21 @@ class ParticleStateComponent(ParticleComponent):
 
     No specific units are enforced: the state variables exposed by the profile
     can be any physical quantity, as long as units are compatible between the
-    source (``properties``) and destination (``profile``) variables bound by
-    the ``state_variables`` dict. Likewise, ``amount`` itself carries no
-    required unit; only its product with the properties' ``ext`` variable is
-    constrained, and must be dimensionally an inverse length, since extinction
-    is by definition expressed per unit length. These unit compatibility
-    requirements are only checked when the component is evaluated (e.g. when
-    computing extinction, albedo or the phase function), not at construction
-    time.
+    source (``properties``) and destination (``profile``) variables linked by
+    the ``state_variables`` dict. The ``amount`` units constraint lies in its
+    combination with the properties dataset's per-``amount`` ``.ext`` quantity:
+    the product of their units must have the dimensionality of an inverse 
+    length, expressing an ``amount``-scaled extinction coefficient. These
+    units compatibility requirements are only checked when the component is
+    evaluated (e.g. when computing extinction, albedo or the phase function).
 
     Interpolation of the ``properties`` against ``state_variables`` is linear.
     Extinction scaling is linear. Non-linear behaviors must be described by the
     ``properties``, that is treated as a simple lookup table by this class.
     Spatial resampling of the profile onto the render grid is axis-dependent:
-    the ``x``/``y`` grids are not interpolated and must exactly match the
-    render grid's extent and resolution, while the ``z`` axis is resampled
-    onto the render grid's layer centres by nearest-neighbor lookup.
+    the ``x`` and ``y`` grids are not interpolated and must match the render
+    grid's extent and resolution; the ``z`` axis is resampled onto the render
+    grid's layers using a nearest-neighbour filter.
 
     Extinction and albedo are interpolated per voxel in Python; the phase
     function is interpolated per voxel by the
@@ -89,9 +88,8 @@ class ParticleStateComponent(ParticleComponent):
     -----
     * The profile may have an irregular z-grid, but its x and y grids must
       be regular and match the render grid's extent and resolution exactly.
-    * The render grid's z-extent need not be contained within the profile's:
-      the profile's ``mass_concentration`` is set to zero for any render-grid
-      layer outside that range.
+    * The profile's ``mass_concentration`` is set to zero for any render-grid
+      layer outside its extent.
     """
 
     profile: ParticleProfile = documented(
