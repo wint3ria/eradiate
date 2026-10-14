@@ -61,28 +61,37 @@ class ParticleStateComponent(ParticleComponent):
     provide the mapping ``state_variables`` and the ``amount`` variable that
     correspond to the targeted interpolation scheme.
 
-    No specific units are enforced, the state variables exposed by the profile
-    can be any physical quantity. However, units must be compatible between the
-    source and destination variables of ``state_variables`` dict. The
-    ``amount`` units must be defined per length to allow extinction scaling and
-    must be compatible with the properties units.
+    No specific units are enforced: the state variables exposed by the profile
+    can be any physical quantity, as long as units are compatible between the
+    source (``properties``) and destination (``profile``) variables bound by
+    the ``state_variables`` dict. Likewise, ``amount`` itself carries no
+    required unit; only its product with the properties' ``ext`` variable is
+    constrained, and must be dimensionally an inverse length, since extinction
+    is by definition expressed per unit length. These unit compatibility
+    requirements are only checked when the component is evaluated (e.g. when
+    computing extinction, albedo or the phase function), not at construction
+    time.
 
     Interpolation of the ``properties`` against ``state_variables`` is linear.
     Extinction scaling is linear. Non-linear behaviors must be described by the
     ``properties``, that is treated as a simple lookup table by this class.
-    Spatial interpolation of the profile against the geometry uses a nearest-
-    neighbor filter.
+    Spatial resampling of the profile onto the render grid is axis-dependent:
+    the ``x``/``y`` grids are not interpolated and must exactly match the
+    render grid's extent and resolution, while the ``z`` axis is resampled
+    onto the render grid's layer centres by nearest-neighbor lookup.
 
     Extinction and albedo are interpolated per voxel in Python; the phase
     function is interpolated per voxel by the
     :class:`.GriddedParticlePhaseFunction` kernel plugin at render time.
-    One or two interpolation ``state_variables`` are currently supported.
+    Exactly one or two state dimensions are currently supported.
 
     Notes
     -----
     * The profile may have an irregular z-grid, but its x and y grids must
-      be regular.
-    * The render grid must be contained within the z-extent of the profile.
+      be regular and match the render grid's extent and resolution exactly.
+    * The render grid's z-extent need not be contained within the profile's:
+      the profile's ``mass_concentration`` is set to zero for any render-grid
+      layer outside that range.
     """
 
     profile: ParticleProfile = documented(
@@ -105,6 +114,17 @@ class ParticleStateComponent(ParticleComponent):
 
     @properties.validator
     def _properties_validator(self, attribute, value):
+        if len(self.state_dims) not in (1, 2):
+            expected = (
+                f" (expected {list(self.state_variables)})"
+                if self.state_variables
+                else ""
+            )
+            raise ValueError(
+                "'properties' must have exactly 1 or 2 state dimensions, "
+                f"got {self.state_dims!r}{expected}"
+            )
+
         missing = [
             d for d in self.state_dims if self._binding[d] not in self.profile.variables
         ]
