@@ -23,7 +23,7 @@ from ._particle_profile import ParticleProfile
 from ..core import traverse
 from ..geometry import PlaneParallelGeometry
 from ..phase import GriddedParticlePhaseFunction
-from ...attrs import define, documented
+from ...attrs import define, documented, get_doc
 from ...data.convert import make_prt_cloud_v1
 from ...grid import SpatialGrid, CartesianGrid
 from ...kernel import SceneParameter
@@ -246,49 +246,6 @@ class ParticleStateComponent(ParticleComponent):
         _, result = traverse(self.phase)
         return result.data
 
-
-@define(eq=False, slots=False)
-class ParticlePSDComponent(ParticleStateComponent):
-    """
-    Atmospheric medium representing a particle PSD component with spatially
-    heterogeneous physical properties.
-
-    The particle PSD component is defined by a dense volumetric *profile*
-    (per-voxel microphysical properties, in the
-    :ref:`Pfd-Core v1 <sec-data-formats-pfd_core_v1>` format) and particle
-    properties (in the :ref:`Prt v1 <sec-data-formats-prt_v1>` format).
-
-    When evaluated, the profile is resampled onto the render grid.
-    Extinction and albedo are interpolated per voxel in Python; the phase
-    function is interpolated per voxel by the
-    :class:`.GriddedParticlePhaseFunction` kernel plugin at render time.
-
-    Notes
-    -----
-    * The profile may have an irregular z-grid, but its x and y grids must
-      be regular.
-    * The render grid must be contained within the z-extent of the profile.
-    """
-
-    def __init__(self, *args, **kwargs):
-        kwargs.setdefault("state_variables", {"reff": "reff", "veff": "veff"})
-        self.__attrs_init__(*args, **kwargs)
-
-    @classmethod
-    def convert(cls, value: Any) -> ParticlePSDComponent:
-        """
-        Conversion logic:
-
-        * If value is a ParticlePSDComponent instance, return it unchanged.
-        * If value is a dictionary, it is interpreted by
-          :data:`.atmosphere_factory`; the ``"type"`` parameter may be
-          omitted and will automatically be set to ``"particle_psd"``.
-        * Otherwise, the value is returned unchanged.
-        """
-        if isinstance(value, cabc.MutableMapping) and "type" not in value:
-            value = {**value, "type": "particle_psd"}
-        return atmosphere_factory.convert(value, allowed_cls=cls)
-
     # --------------------------------------------------------------------------
     #                       Radiative properties
     # --------------------------------------------------------------------------
@@ -492,6 +449,73 @@ class ParticlePSDComponent(ParticleStateComponent):
             width=self.geometry.width,
         )
         return attrs.evolve(self, geometry=geometry)
+
+
+@define(eq=False, slots=False)
+class ParticlePSDComponent(ParticleStateComponent):
+    """
+    Atmospheric medium representing a particle PSD component with spatially
+    heterogeneous physical properties.
+
+    The particle PSD component is defined by a dense volumetric *profile*
+    (per-voxel microphysical properties, in the
+    :ref:`Psd-Core v1 <sec-data-formats-psd_core_v1>` format) and particle
+    properties (in the :ref:`Prt v1 <sec-data-formats-prt_v1>` format).
+
+    When evaluated, the profile is resampled onto the render grid.
+    Extinction and albedo are interpolated per voxel in Python; the phase
+    function is interpolated per voxel by the
+    :class:`.GriddedParticlePhaseFunction` kernel plugin at render time.
+
+    Notes
+    -----
+    * The profile may have an irregular z-grid, but its x and y grids must
+      be regular.
+    * The render grid must be contained within the z-extent of the profile.
+    """
+
+    amount: str | None = documented(
+        attrs.field(
+            default="mass_concentration",
+            kw_only=True,
+            validator=attrs.validators.optional(attrs.validators.instance_of(str)),
+        ),
+        doc=get_doc(ParticleStateComponent, "amount", "doc"),
+        type=get_doc(ParticleStateComponent, "amount", "type"),
+        init_type=get_doc(ParticleStateComponent, "amount", "init_type"),
+        default='"mass_concentration"',
+    )
+
+    state_variables: dict[str, str] = documented(
+        attrs.field(
+            default={ "reff": "reff", "veff": "veff" },
+            kw_only=True,
+            validator=attrs.validators.deep_mapping(
+                key_validator=attrs.validators.instance_of(str),
+                value_validator=attrs.validators.instance_of(str),
+                mapping_validator=attrs.validators.instance_of(dict),
+            ),
+        ),
+        doc=get_doc(ParticleStateComponent, "state_variables", "doc"),
+        type=get_doc(ParticleStateComponent, "state_variables", "type"),
+        init_type=get_doc(ParticleStateComponent, "state_variables", "init_type"),
+        default='{ "reff": "reff", "veff": "veff" }'
+    )
+
+    @classmethod
+    def convert(cls, value: Any) -> ParticlePSDComponent:
+        """
+        Conversion logic:
+
+        * If value is a ParticlePSDComponent instance, return it unchanged.
+        * If value is a dictionary, it is interpreted by
+          :data:`.atmosphere_factory`; the ``"type"`` parameter may be
+          omitted and will automatically be set to ``"particle_psd"``.
+        * Otherwise, the value is returned unchanged.
+        """
+        if isinstance(value, cabc.MutableMapping) and "type" not in value:
+            value = {**value, "type": "particle_psd"}
+        return atmosphere_factory.convert(value, allowed_cls=cls)
 
     # --------------------------------------------------------------------------
     #                       Voxel <-> ParticleAOTComponent conversion
