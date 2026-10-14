@@ -840,8 +840,8 @@ def test_multi_reff_veff_ws(mode_mono):
 
     phase = psd.phase
     assert isinstance(phase, GriddedParticlePhaseFunction)
-    np.testing.assert_allclose(phase.r_eff_grid.m_as("micron"), reff_vals)
-    np.testing.assert_allclose(phase.v_eff_grid.m_as(ureg.dimensionless), veff_vals)
+    np.testing.assert_allclose(phase.grid_1.m_as("micron"), reff_vals)
+    np.testing.assert_allclose(phase.grid_2.m_as(ureg.dimensionless), veff_vals)
 
     params = psd._params_phase
     for key in ["nodes", "phase_mueller", "grid_start", "sigma_s_weight"]:
