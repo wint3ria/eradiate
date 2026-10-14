@@ -40,10 +40,55 @@ from ...util.misc import cache_by_id
 @define(eq=False, slots=False)
 class ParticleStateComponent(ParticleComponent):
 
+    """
+    Base class for a ParticleComponent defined by a ``profile`` class and a
+    ``properties`` class. The profile defines the variation of a set of 
+    ``state_variables`` and ``amount`` in space, used to interpolate the
+    ``properties`` at each location. The ``properties`` defines the mapping
+    from state variables to optical properties such as extinction, albedo and
+    phase function. This class is typically used for complex particle
+    properties varying in space, such as clouds. When evaluated, the profile is
+    resampled onto the render grid.
+
+    The ``amount`` is a special state variable treated separately. It defines
+    the density of the current species at the location. It is used only for
+    scaling the extinction.
+
+    The class is concrete, although its default (empty) parameters do not
+    allow to properly define an interpolation behavior. It is thus possible to
+    instantiate the class for a profile and properties pair that is not
+    explicitly supported by Eradiate by default. In this case, users must
+    provide the mapping ``state_variables`` and the ``amount`` variable that
+    correspond to the targeted interpolation scheme.
+
+    No specific units are enforced, the state variables exposed by the profile
+    can be any physical quantity. However, units must be compatible between the
+    source and destination variables of ``state_variables`` dict. The
+    ``amount`` units must be defined per length to allow extinction scaling and
+    must be compatible with the properties units.
+
+    Interpolation of the ``properties`` against ``state_variables`` is linear.
+    Extinction scaling is linear. Non-linear behaviors must be described by the
+    ``properties``, that is treated as a simple lookup table by this class.
+    Spatial interpolation of the profile against the geometry uses a nearest-
+    neighbor filter.
+
+    Extinction and albedo are interpolated per voxel in Python; the phase
+    function is interpolated per voxel by the
+    :class:`.GriddedParticlePhaseFunction` kernel plugin at render time.
+    One or two interpolation ``state_variables`` are currently supported.
+
+    Notes
+    -----
+    * The profile may have an irregular z-grid, but its x and y grids must
+      be regular.
+    * The render grid must be contained within the z-extent of the profile.
+    """
+
     profile: ParticleProfile = documented(
         attrs.field(kw_only=True, converter=ParticleProfile.convert),
-        doc="Dense volumetric cloud profile, in the "
-        ":ref:`Pfd-Core v1 <sec-data-formats-pfd_core_v1>` format. "
+        doc="Dense volumetric state profile, in the "
+        ":ref:`Psd-Core v1 <sec-data-formats-psd_core_v1>` format. "
         "This parameter has no default.",
         type="ParticleProfile",
         init_type="ParticleProfile or Dataset or path-like",
@@ -439,7 +484,7 @@ class ParticleStateComponent(ParticleComponent):
 
     def to_profile_regular_grid(self):
         """
-        Return a copy of this :class:`ParticlePSDComponent` with its geometry set to
+        Return a copy of this :class:`ParticleStateComponent` with its geometry set to
         a regular grid aligned with the profile.
         """
         grid = self._profile_regular_grid()
@@ -454,24 +499,15 @@ class ParticleStateComponent(ParticleComponent):
 @define(eq=False, slots=False)
 class ParticlePSDComponent(ParticleStateComponent):
     """
-    Atmospheric medium representing a particle PSD component with spatially
-    heterogeneous physical properties.
+    Atmospheric medium representing a particle component with spatially
+    heterogeneous physical properties indexed by effective radius (``reff``)
+    and variance (``veff``). The amount of the species is described by a
+    mass concentration (``mass_concentration``).
 
     The particle PSD component is defined by a dense volumetric *profile*
     (per-voxel microphysical properties, in the
     :ref:`Psd-Core v1 <sec-data-formats-psd_core_v1>` format) and particle
     properties (in the :ref:`Prt v1 <sec-data-formats-prt_v1>` format).
-
-    When evaluated, the profile is resampled onto the render grid.
-    Extinction and albedo are interpolated per voxel in Python; the phase
-    function is interpolated per voxel by the
-    :class:`.GriddedParticlePhaseFunction` kernel plugin at render time.
-
-    Notes
-    -----
-    * The profile may have an irregular z-grid, but its x and y grids must
-      be regular.
-    * The render grid must be contained within the z-extent of the profile.
     """
 
     amount: str | None = documented(
